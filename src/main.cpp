@@ -7,6 +7,12 @@
 #include <memory>
 #include <string>
 #include <array>
+#include <map>
+#include <queue>
+#include <fstream>
+#include <thread>
+#include <deque>
+#include <filesystem>
 
 #ifdef __APPLE__
 #include <OpenCL/cl.h>
@@ -221,10 +227,11 @@ public:
     }
 
     static Metric identity() {
-        return Metric(std::array<float,16>{ 1,0,0,0, 
+        static float ident[16] = {          1,0,0,0, 
                                             0,1,0,0, 
                                             0,0,1,0, 
-                                            0,0,0,1 });
+                                            0,0,0,1 };
+        return Metric(ident);
     }
 };
 
@@ -407,7 +414,7 @@ kernel void metricDerivativeKernel(
     pos.z = get_global_id(2);
     dim.z = get_global_size(2);
     pos.w = 0;
-    
+
     size_t i = dex(pos.xyz, dim);
     for(int k = 0; k < 4; k++) {
         n.v = pos;
@@ -585,6 +592,38 @@ BOOST_COMPUTE_FUNCTION(compute::float16_, minikowski, (), {
 
     return m;
 });
+
+struct deriv {
+    compute::program prog;
+    size_t block_size;
+
+    void operator()(
+        compute::mapped_view<compute::float16_> & m,
+        compute::mapped_view<compute::float16_> & x0,
+        compute::mapped_view<compute::float16_> & y0,
+        compute::mapped_view<compute::float16_> & z0,
+        compute::mapped_view<compute::float16_> & t0,
+        compute::mapped_view<compute::float16_> & d,
+        compute::command_queue & queue
+    ) {
+        cout << "derivative..." << flush;
+        auto derivKernel = prog.create_kernel("metricDerivativeKernel");
+        derivKernel.set_args(
+            m.get_buffer(),
+            x0.get_buffer(),
+            y0.get_buffer(),
+            z0.get_buffer(),
+            t0.get_buffer(),
+            d.get_buffer()
+        );
+        queue.enqueue_nd_range_kernel<3>(
+            derivKernel, 
+            compute::extents<3>(0),
+            compute::extents<3>(block_size),
+            compute::extents<3>(1));
+        cout << "done." << endl;
+    }
+};
 
 struct invert {
     compute::program prog;

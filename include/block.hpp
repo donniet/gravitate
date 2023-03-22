@@ -9,6 +9,7 @@
 #include <cstdio>
 #include <exception>
 #include <sstream>
+#include <thread>
 
 
 using std::istream;
@@ -47,6 +48,8 @@ public:
 
     BlockStorage(BlockStorage<Block, Key> const &);
     BlockStorage(BlockStorage<Block, Key> &&) noexcept;
+
+    void dump(ostream & os);
 private:
     BlockStorage();
 
@@ -55,6 +58,21 @@ private:
     size_t grow_index(Key const & key);
     void open_file();
     void close_file();
+
+    void seekp_to_data();
+    void seekp_to_block(size_t index);
+    void seekp_to_index();
+    void seekp_to_data_size();
+    void seekp_to_index_size();
+    void seekg_to_data();
+    void seekg_to_block(size_t index);
+    void seekg_to_index();
+    void seekg_to_data_size();
+    void seekg_to_index_size();
+
+    bool read_block(Key const & key, Block & block);
+    void update_file_size();
+    void write_footer();
 
     std::map<Key,size_t> index_;
     size_t next_index_;
@@ -84,14 +102,133 @@ private:
 
 template<typename Block, typename Key>
 BlockStorage<Block,Key>::BlockStorage()
-    : maximum_loaded_blocks_(0), index_size_(0), data_size_(0), file_size_(0),
+    : next_index_(0), maximum_loaded_blocks_(0), index_size_(0), data_size_(0), file_size_(0),
       cache_hit_(0), cache_miss_(0), block_size_(0), key_size_(0)
 { }
+
+template<typename Block, typename Key>
+void BlockStorage<Block,Key>::seekp_to_data() 
+{
+    block_file_.seekp(0, std::ios::beg);
+}
+template<typename Block, typename Key>
+void BlockStorage<Block,Key>::seekp_to_block(size_t index) 
+{
+    block_file_.seekp(index * block_size_, std::ios::beg);
+}
+template<typename Block, typename Key>
+void BlockStorage<Block,Key>::seekp_to_index() 
+{
+    block_file_.seekp(-index_size_ - sizeof(data_size_) - sizeof(index_size_), std::ios::end);
+}
+template<typename Block, typename Key>
+void BlockStorage<Block,Key>::seekp_to_data_size() 
+{
+    block_file_.seekp(-sizeof(data_size_) - sizeof(index_size_), std::ios::end);
+}
+template<typename Block, typename Key>
+void BlockStorage<Block,Key>::seekp_to_index_size() 
+{
+    block_file_.seekp(-sizeof(index_size_), std::ios::end);
+}
+template<typename Block, typename Key>
+void BlockStorage<Block,Key>::seekg_to_data() 
+{
+    block_file_.seekg(0, std::ios::beg);
+}
+template<typename Block, typename Key>
+void BlockStorage<Block,Key>::seekg_to_block(size_t index) 
+{
+    block_file_.seekg(index * block_size_, std::ios::beg);
+}
+template<typename Block, typename Key>
+void BlockStorage<Block,Key>::seekg_to_index() 
+{
+    block_file_.seekg(-index_size_ - sizeof(data_size_) - sizeof(index_size_), std::ios::end);
+}
+template<typename Block, typename Key>
+void BlockStorage<Block,Key>::seekg_to_data_size() 
+{
+    block_file_.seekg(-sizeof(data_size_) - sizeof(index_size_), std::ios::end);
+}
+template<typename Block, typename Key>
+void BlockStorage<Block,Key>::seekg_to_index_size() 
+{
+    block_file_.seekg(-sizeof(index_size_), std::ios::end);
+}
+
+// assumes under lock
+template<typename Block, typename Key>
+void BlockStorage<Block,Key>::update_file_size()
+{
+    block_file_.seekg(0, std::ios::end);
+    file_size_ = block_file_.tellg();
+    block_file_.seekg(0, std::ios::beg);
+}
+
+// assumes under lock
+template<typename Block, typename Key>
+bool BlockStorage<Block, Key>::read_block(Key const & key, Block & block) 
+{
+    auto it = index_.find(key);
+    if(it == index_.end()) {
+        return false;
+    }
+
+    block_file_.seekg(it->second * block_size_, std::ios::beg);
+    blocker_.read(block_file_, block);
+    return true;
+}
+
+template<typename Block, typename Key>
+void BlockStorage<Block, Key>::dump(ostream & os) 
+{
+    // lock
+    std::unique_lock<std::mutex> guard(mutex_);
+
+    os << "BLOCK STORAGE: " << std::endl;
+    os << "index_size: " << index_size_ << std::endl;
+    os << "data_size: " << data_size_ << std::endl;
+    os << "file_size: " << file_size_ << std::endl;
+    os << "cache_hit: " << cache_hit_ << std::endl;
+    os << "cache_miss: " << cache_miss_ << std::endl;
+    os << "block_size: " << block_size_ << std::endl;
+    os << "key_size: " << key_size_ << std::endl;
+    os << "maximum_loaded_blocks: " << maximum_loaded_blocks_ << std::endl;
+    os << "next_index: " << next_index_ << std::endl;
+    os << "blocks loaded:\n";
+    for(auto const & kv : loaded_) {
+        os << kv.first << " ";
+    }
+    os << std::endl;
+    os << "index:\n";
+    for(auto const & kv : index_) {
+        os << "\t" << kv.first << ": " << kv.second << std::endl;
+    }
+    os << std::endl;
+    os << "blocks:\n";
+    auto pb = std::make_shared<Block>();
+    for(auto const & kv : index_) {
+        os << kv.first << ":\n";
+        read_block(kv.first, *pb);
+        os << *pb << std::endl;
+    }
+    os << std::endl;
+    os << "done." << std::endl;
+}
 
 template<typename Block, typename Key>
 void BlockStorage<Block,Key>::close_file()
 {
     block_file_.close();
+}
+
+template<typename Block, typename Key>
+void BlockStorage<Block,Key>::write_footer() 
+{
+    block_file_.write(reinterpret_cast<const char *>(&data_size_), sizeof(data_size_));
+    block_file_.write(reinterpret_cast<const char *>(&index_size_), sizeof(index_size_));
+    block_file_.flush();
 }
 
 template<typename Block, typename Key>
@@ -115,18 +252,16 @@ void BlockStorage<Block,Key>::open_file()
         ss << "Could not open file: " << path_ << " - " << strerror(errno); 
         throw std::runtime_error(ss.str());
     }
-    block_file_.seekg(0, std::ios::end);
-    file_size_ = block_file_.tellg();
-    block_file_.seekg(0, std::ios::beg);
-
-    std::cerr << "file_size: " << file_size_ << std::endl;
+    update_file_size();
 
     // if this is a new file, write out the data and index size (also zeros) to initialize the file
     if(file_size_ == 0) {
-        block_file_.write(reinterpret_cast<const char *>(&data_size_), sizeof(data_size_));
-        block_file_.write(reinterpret_cast<const char *>(&index_size_), sizeof(index_size_));
-        block_file_.flush();
+        write_footer();
+
+        update_file_size();
     }
+
+    std::cerr << "file_size: " << file_size_ << std::endl;
 }
 
 template<typename Block, typename Key>
@@ -190,13 +325,13 @@ void BlockStorage<Block,Key>::double_storage()
     auto buffer = std::make_unique<char[]>(index_size_);
 
     // move to the start of the index
-    block_file_.seekg(-index_size_ - file_size_ - sizeof(index_size_) - sizeof(block_size_), std::ios::end);
+    block_file_.seekg(-index_size_ - file_size_ - sizeof(block_size_) - sizeof(index_size_), std::ios::end);
     // read the index into the buffer
-    block_file_.read(buffer, index_size_);
+    block_file_.read(buffer.get(), index_size_);
     // move to the start position of the new index
-    block_file_.seekp(-index_size_- sizeof(index_size_) - sizeof(block_size_), std::ios::end);
+    block_file_.seekp(-index_size_- sizeof(block_size_) - sizeof(index_size_), std::ios::end);
     // write the new index
-    block_file_.write(buffer, index_size_);
+    block_file_.write(buffer.get(), index_size_);
     block_file_.write(reinterpret_cast<const char *>(&block_size_), sizeof(block_size_));
     block_file_.write(reinterpret_cast<const char *>(&index_size_), sizeof(index_size_));
 
@@ -204,15 +339,18 @@ void BlockStorage<Block,Key>::double_storage()
     file_size_ = new_size;
 }
 
+
+
 // must be executed under lock
 template<typename Block, typename Key>
 size_t BlockStorage<Block,Key>::grow_index(Key const & key)
 {
-    if(data_size_ + index_size_ + key_size_ + sizeof(size_t) > file_size_) 
+    if(data_size_ + index_size_ + key_size_ + sizeof(size_t) + block_size_  > file_size_ - sizeof(index_size_) - sizeof(data_size_)) 
         double_storage();
 
-    block_file_.seekp(-index_size_ - key_size_ - sizeof(size_t), std::ios::end);
-    keyer_.write(key, block_file_);
+    seekp_to_index();
+    block_file_.seekp(-key_size_ - sizeof(size_t), std::ios::cur);
+    keyer_.write(block_file_, key);
     block_file_.write((char*)&next_index_, sizeof(size_t));
     auto ret = next_index_++;
     return ret;
@@ -221,7 +359,7 @@ size_t BlockStorage<Block,Key>::grow_index(Key const & key)
 template<typename Block, typename Key>
 Block & BlockStorage<Block,Key>::get(Key const &key) 
 {
-    std::lock_guard<std::mutex> guard(mutex_);
+    std::unique_lock<std::mutex> guard(mutex_);
 
     auto it = loaded_.find(key);
     if (it != loaded_.end()) 
@@ -237,7 +375,7 @@ Block & BlockStorage<Block,Key>::get(Key const &key)
         size_t dex = 0;
         bool init = false;
         if(ip != index_.end()) {
-            dex = *ip;
+            dex = ip->second;
         } else {
             dex = grow_index(key);
             init = true;

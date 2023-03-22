@@ -18,6 +18,12 @@ TEST(BlockTest, CreateBlock) {
         std::cerr << "file does not exist" << std::endl;
     }
 
+    int i = blocks.get(0);
+
+    blocks.dump(std::cerr);
+
+
+
     EXPECT_EQ(0, 0);
 
     std::filesystem::remove(path);

@@ -38,7 +38,27 @@ template<> struct FixedReadWriter<int> {
 template<typename Block, typename Key>
 class BlockStorage {
 public:
-    Block & get(Key const &key);
+    class ScopedWrapper {
+        friend class BlockStorage<Block, Key>;
+    public:
+        ~ScopedWrapper();
+        ScopedWrapper(ScopedWrapper const &);
+        ScopedWrapper(ScopedWrapper &&) noexcept;
+
+        Key const & key() const;
+
+        void save() const;
+
+        Block & operator*() const;
+        Block & operator->() const;
+    private:
+        ScopedWrapper(BlockStorage<Block, Key> * storage, std::shared_ptr<Block> block, Key const & key);
+        BlockStorage<Block, Key> * storage_;
+        std::shared_ptr<Block> block_;
+        Key key_;
+    };
+
+    ScopedWrapper get(Key const &key);
     void save_one(Key const &key);
     // saves everything to disk
     void save_all();
@@ -127,6 +147,53 @@ BlockStorage<Block,Key>::~BlockStorage()
     close_file();
 }
 
+template<typename Block, typename Key>
+BlockStorage<Block,Key>::ScopedWrapper::ScopedWrapper(
+    BlockStorage<Block,Key> * storage, 
+    std::shared_ptr<Block> block,
+    Key const & key)
+    : storage_(storage), block_(block), key_(key)
+{ }
+
+template<typename Block, typename Key>
+BlockStorage<Block,Key>::ScopedWrapper::ScopedWrapper(ScopedWrapper const & other)
+    : storage_(other.storage), block_(other.block), key_(other.key)
+{ }
+
+template<typename Block, typename Key>
+BlockStorage<Block,Key>::ScopedWrapper::ScopedWrapper(ScopedWrapper && other) noexcept
+    : storage_(other.storage), block_(std::move(other.block)), key_(std::move(other.key))
+{ }
+
+template<typename Block, typename Key>
+Key const & BlockStorage<Block,Key>::ScopedWrapper::key() const
+{
+    return key_;
+}
+
+template<typename Block, typename Key>
+void BlockStorage<Block,Key>::ScopedWrapper::save() const
+{ 
+    storage_->save_one(key_);
+}
+
+template<typename Block, typename Key>
+BlockStorage<Block,Key>::ScopedWrapper::~ScopedWrapper()
+{
+    save();
+}
+
+template<typename Block, typename Key>
+Block & BlockStorage<Block,Key>::ScopedWrapper::operator*() const
+{
+    return *block_;
+}
+
+template<typename Block, typename Key>
+Block & BlockStorage<Block,Key>::ScopedWrapper::operator->() const
+{
+    return *block_;
+}
 
 // assumes under lock
 template<typename Block, typename Key>
@@ -429,7 +496,7 @@ std::shared_ptr<Block> BlockStorage<Block,Key>::grow_index(Key const & key)
 }
 
 template<typename Block, typename Key>
-Block & BlockStorage<Block,Key>::get(Key const &key) 
+typename BlockStorage<Block,Key>::ScopedWrapper BlockStorage<Block,Key>::get(Key const &key) 
 {
     std::unique_lock<std::mutex> guard(mutex_);
 
@@ -440,7 +507,7 @@ Block & BlockStorage<Block,Key>::get(Key const &key)
     {
         std::cerr << "cache hit." << std::endl;
         ++cache_hit_;
-        return *it->second;
+        return ScopedWrapper(this, it->second, key);
     }
 
     std::cerr << "cache miss." << std::endl;
@@ -466,7 +533,7 @@ Block & BlockStorage<Block,Key>::get(Key const &key)
 
     keys_.push_back(key);
     loaded_[key] = block;
-    return *block;
+    return BlockStorage<Block,Key>::ScopedWrapper(this, block, key);
 }
 
 

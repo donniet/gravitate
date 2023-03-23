@@ -18,7 +18,7 @@ struct temp_file {
 
 void create_block_file(string const & path) {
     auto blocks = BlockStorage<int,int>::create_or_open(path, 10);
-    blocks.get(0) = -1;
+    *blocks.get(0) = -1;
     blocks.save_one(0);
 
     blocks.dump(std::cerr);
@@ -39,8 +39,8 @@ TEST(BlockTest, CreateBlock) {
     auto blocks = BlockStorage<int,int>::create_or_open(path, 10);
     blocks.dump(std::cerr);
 
-    int & i = blocks.get(0);
-    ASSERT_EQ(i, -1);
+    auto i = blocks.get(0);
+    ASSERT_EQ(*i, -1);
 }
 
 TEST(BlockTest, WriteALot) {
@@ -57,11 +57,11 @@ TEST(BlockTest, WriteALot) {
     const int count = 1e4;
 
     for(int i = 0; i < count; i++) {
-        // auto v = hasher(i);
-        auto v = i;
+        auto v = hasher(i);
+        // auto v = i;
         test_data[i] = v;
-        blocks.get(i) = v;
-        blocks.save_one(i);
+        *blocks.get(i) = v;
+        // blocks.save_one(i);
     }
 
     // verify
@@ -69,7 +69,7 @@ TEST(BlockTest, WriteALot) {
     int i = 0;
     for(; i < count; i++) {
         auto v = blocks.get(i);
-        if(test_data[i] != v) {
+        if(test_data[i] != *v) {
             valid = false;
             break;
         }

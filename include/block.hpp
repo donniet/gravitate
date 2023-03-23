@@ -56,7 +56,7 @@ private:
     void remove_one_from_mem();
     void double_storage();
     std::shared_ptr<Block> grow_index(Key const & key);
-    void open_file();
+    void open_file(size_t resize_old_size = 0);
     void close_file();
     void measure_sizes();
 
@@ -233,7 +233,7 @@ void BlockStorage<Block,Key>::measure_sizes()
 }
 
 template<typename Block, typename Key>
-void BlockStorage<Block,Key>::open_file() 
+void BlockStorage<Block,Key>::open_file(size_t resize_old_size) 
 {
     measure_sizes();
 
@@ -264,26 +264,42 @@ void BlockStorage<Block,Key>::open_file()
 
         update_file_size();
     } else {
-        // otherwise read the data and index size from the file
-        std::cerr << "non-zero file size: " << file_size_ << std::endl;
+        if (resize_old_size > 0) {
+            block_file_.seekg(resize_old_size - footer_size_, std::ios::beg);
+            block_file_.read(reinterpret_cast<char*>(&data_size_), sizeof(data_size_));
+            block_file_.read(reinterpret_cast<char*>(&index_size_), sizeof(index_size_));
 
-        seekg_to_data_size();
-        block_file_.read(reinterpret_cast<char *>(&data_size_), sizeof(data_size_));
-        seekg_to_index_size();
-        block_file_.read(reinterpret_cast<char *>(&index_size_), sizeof(index_size_));
+            block_file_.seekg(resize_old_size - index_size_ - footer_size_, std::ios::beg);
+            auto pk = std::make_shared<Key>();
+            size_t off;
+            for(size_t i = 0; i < index_size_; i += key_size_ + sizeof(size_t)) {
+                keyer_.read(block_file_, *pk);
+                block_file_.read(reinterpret_cast<char *>(&off), sizeof(size_t));
 
-        std::cerr << "data size: " << data_size_ << std::endl;
-        std::cerr << "index size: " << index_size_ << std::endl;
+                index_[*pk] = off;
+            }
+        } else {
+            // otherwise read the data and index size from the file
+            std::cerr << "non-zero file size: " << file_size_ << std::endl;
 
-        seekg_to_index();
-        auto pk = std::make_shared<Key>();
-        size_t off;
+            seekg_to_data_size();
+            block_file_.read(reinterpret_cast<char *>(&data_size_), sizeof(data_size_));
+            seekg_to_index_size();
+            block_file_.read(reinterpret_cast<char *>(&index_size_), sizeof(index_size_));
 
-        for(size_t i = 0; i < index_size_; i += key_size_ + sizeof(size_t)) {
-            keyer_.read(block_file_, *pk);
-            block_file_.read(reinterpret_cast<char *>(&off), sizeof(size_t));
+            std::cerr << "data size: " << data_size_ << std::endl;
+            std::cerr << "index size: " << index_size_ << std::endl;
 
-            index_[*pk] = off;
+            seekg_to_index();
+            auto pk = std::make_shared<Key>();
+            size_t off;
+
+            for(size_t i = 0; i < index_size_; i += key_size_ + sizeof(size_t)) {
+                keyer_.read(block_file_, *pk);
+                block_file_.read(reinterpret_cast<char *>(&off), sizeof(size_t));
+
+                index_[*pk] = off;
+            }
         }
     }
 
@@ -322,6 +338,7 @@ void BlockStorage<Block,Key>::remove_one_from_mem()
     if(keys_.size() == 0) return;
 
     auto key_to_remove = keys_.front();
+    std::cerr << "removing: " << key_to_remove << std::endl;
     keys_.pop_front();
     loaded_.erase(key_to_remove);
 }
@@ -339,7 +356,7 @@ void BlockStorage<Block,Key>::double_storage()
 
     close_file();
     std::filesystem::resize_file(path_, new_size);
-    open_file();
+    open_file(old_size);
 
     // copy the index from it's old location to it's new location
     auto buffer = std::make_unique<char[]>(index_size_);
@@ -399,10 +416,10 @@ std::shared_ptr<Block> BlockStorage<Block,Key>::grow_index(Key const & key)
 
     // write the counters to disk
     seekp_to_data_size();
-    std::cerr << "block_file_.tellp(): " << block_file_.tellp() << std::endl;
+    // std::cerr << "block_file_.tellp(): " << block_file_.tellp() << std::endl;
     block_file_.write(reinterpret_cast<const char *>(&data_size_), sizeof(data_size_));
     seekp_to_index_size();
-    std::cerr << "block_file_.tellp(): " << block_file_.tellp() << std::endl;
+    // std::cerr << "block_file_.tellp(): " << block_file_.tellp() << std::endl;
     block_file_.write(reinterpret_cast<const char *>(&index_size_), sizeof(index_size_));
     block_file_.flush();
 
@@ -416,13 +433,17 @@ Block & BlockStorage<Block,Key>::get(Key const &key)
 {
     std::unique_lock<std::mutex> guard(mutex_);
 
+    std::cerr << "get(" << key << ")" << std::endl;
+
     auto it = loaded_.find(key);
     if (it != loaded_.end()) 
     {
+        std::cerr << "cache hit." << std::endl;
         ++cache_hit_;
         return *it->second;
     }
 
+    std::cerr << "cache miss." << std::endl;
     ++cache_miss_;
     if (loaded_.size() >= maximum_loaded_blocks_) 
         remove_one_from_mem(); 
@@ -431,12 +452,16 @@ Block & BlockStorage<Block,Key>::get(Key const &key)
 
     auto ip = index_.find(key);
     if (ip == index_.end()) {
+        std::cerr << "new key" << std::endl;
         block = grow_index(key);
     } else {    
+        std::cerr << "old key, restore from disk: " << ip->second << std::endl;
         // load the block from disk
         block = std::make_shared<Block>();
         seekg_to_block(ip->second);
         blocker_.read(block_file_, *block);
+
+        std::cerr << "value: " << *block << std::endl;
     }
 
     keys_.push_back(key);

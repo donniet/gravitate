@@ -58,6 +58,7 @@ private:
     std::shared_ptr<Block> grow_index(Key const & key);
     void open_file();
     void close_file();
+    void measure_sizes();
 
     void seekp_to_data();
     void seekp_to_block(size_t index);
@@ -94,7 +95,6 @@ private:
     size_t key_size_;
     size_t footer_size_;
 
-
     FixedReadWriter<Block> blocker_;
     FixedReadWriter<Key> keyer_;
 
@@ -116,7 +116,9 @@ BlockStorage<Block,Key>::BlockStorage(BlockStorage<Block,Key> && other) noexcept
       cache_hit_(other.cache_hit_), cache_miss_(other.cache_miss_), block_size_(other.block_size_), key_size_(other.key_size_), footer_size_(other.footer_size_),
       blocker_(std::move(other.blocker_)), keyer_(std::move(other.keyer_)),
       mutex_()
-{ }
+{ 
+    std::cerr << "moved." << std::endl;
+}
 
 
 template<typename Block, typename Key>
@@ -156,26 +158,26 @@ void BlockStorage<Block, Key>::dump(ostream & os)
     std::unique_lock<std::mutex> guard(mutex_);
 
     os << "BLOCK STORAGE: " << std::endl;
-    os << "index_size: " << index_size_ << std::endl;
-    os << "data_size: " << data_size_ << std::endl;
-    os << "file_size: " << file_size_ << std::endl;
-    os << "cache_hit: " << cache_hit_ << std::endl;
-    os << "cache_miss: " << cache_miss_ << std::endl;
-    os << "block_size: " << block_size_ << std::endl;
-    os << "key_size: " << key_size_ << std::endl;
-    os << "maximum_loaded_blocks: " << maximum_loaded_blocks_ << std::endl;
-    os << "next_index: " << offset_ << std::endl;
-    os << "blocks loaded:\n";
+    os << "\tindex_size: " << index_size_ << std::endl;
+    os << "\tdata_size: " << data_size_ << std::endl;
+    os << "\tfile_size: " << file_size_ << std::endl;
+    os << "\tcache_hit: " << cache_hit_ << std::endl;
+    os << "\tcache_miss: " << cache_miss_ << std::endl;
+    os << "\tblock_size: " << block_size_ << std::endl;
+    os << "\tkey_size: " << key_size_ << std::endl;
+    os << "\tmaximum_loaded_blocks: " << maximum_loaded_blocks_ << std::endl;
+    os << "\tnext_index: " << offset_ << std::endl;
+    os << "\tblocks loaded:\n";
     for(auto const & kv : loaded_) {
         os << kv.first << " ";
     }
     os << std::endl;
-    os << "index:\n";
+    os << "\tindex:\n";
     for(auto const & kv : index_) {
-        os << "\t" << kv.first << ": " << kv.second << std::endl;
+        os << "\t\t" << kv.first << ": " << kv.second << std::endl;
     }
     os << std::endl;
-    os << "blocks:\n";
+    os << "\tblocks:\n";
     auto pb = std::make_shared<Block>();
     for(auto const & kv : index_) {
         os << kv.first << ":\n";
@@ -201,8 +203,40 @@ void BlockStorage<Block,Key>::write_footer()
 }
 
 template<typename Block, typename Key>
+void BlockStorage<Block,Key>::measure_sizes()
+{
+    // figure out how big the block and key is
+    auto pb = std::make_shared<Block>();
+    auto pk = std::make_shared<Key>();
+
+    auto temp_path = std::filesystem::temp_directory_path() / "blockstorage_test.blk";
+    fstream t(temp_path, std::ios::out | std::ios::binary);
+
+    // write it to the file and read the size
+    auto b = t.tellp();
+
+    // measure the size of a block written to disk
+    blocker_.write(t, *pb);
+    auto e = t.tellp();
+    block_size_ = e - b;
+
+    // measure the size of a key written to disk
+    keyer_.write(t, *pk);
+    b = t.tellp();
+    key_size_ = b - e;
+
+    std::cerr << "key size: " << key_size_ << "\n";
+    std::cerr << "block size: " << block_size_ << std::endl;
+
+    t.close();
+    std::filesystem::remove(temp_path);
+}
+
+template<typename Block, typename Key>
 void BlockStorage<Block,Key>::open_file() 
 {
+    measure_sizes();
+
     block_file_.open(path_, std::fstream::in | std::fstream::out | std::fstream::binary);
     if(!block_file_.is_open() && errno == ENOENT) {
         // create the file
@@ -225,15 +259,21 @@ void BlockStorage<Block,Key>::open_file()
 
     // if this is a new file, write out the data and index size (also zeros) to initialize the file
     if(file_size_ == 0) {
+        std::cerr << "zero file size." << std::endl;
         write_footer();
 
         update_file_size();
     } else {
         // otherwise read the data and index size from the file
+        std::cerr << "non-zero file size: " << file_size_ << std::endl;
+
         seekg_to_data_size();
         block_file_.read(reinterpret_cast<char *>(&data_size_), sizeof(data_size_));
         seekg_to_index_size();
         block_file_.read(reinterpret_cast<char *>(&index_size_), sizeof(index_size_));
+
+        std::cerr << "data size: " << data_size_ << std::endl;
+        std::cerr << "index size: " << index_size_ << std::endl;
 
         seekg_to_index();
         auto pk = std::make_shared<Key>();
@@ -257,34 +297,7 @@ BlockStorage<Block,Key> BlockStorage<Block,Key>::create_or_open(string const & f
     storage.maximum_loaded_blocks_ = maximum_loaded_blocks;
     storage.path_ = file_name;
 
-    // figure out how big the block and key is
-    auto pb = std::make_shared<Block>();
-    auto pk = std::make_shared<Key>();
-
-    auto temp_path = std::filesystem::temp_directory_path() / "blockstorage_test.blk";
-    fstream t(temp_path, std::ios::out | std::ios::binary);
-
-    // write it to the file and read the size
-    auto b = t.tellp();
-
-    storage.blocker_.write(t, *pb);
-    auto e = t.tellp();
-    storage.block_size_ = e - b;
-
-    storage.keyer_.write(t, *pk);
-    b = t.tellp();
-    storage.key_size_ = b - e;
-
-    std::cerr << "key size: " << storage.key_size_ << "\n";
-    std::cerr << "block size: " << storage.block_size_ << std::endl;
-
-    t.close();
-    std::filesystem::remove(temp_path);
-
-
-
     storage.open_file();
-
 
     return storage;
 }
@@ -317,7 +330,12 @@ void BlockStorage<Block,Key>::remove_one_from_mem()
 template<typename Block, typename Key>
 void BlockStorage<Block,Key>::double_storage()
 {
+    std::cerr << "double_storage()" << std::endl;
+
+    size_t old_size = file_size_;
     size_t new_size = file_size_ * 2;
+
+    std::cerr << "new_size: " << new_size << std::endl;
 
     close_file();
     std::filesystem::resize_file(path_, new_size);
@@ -327,18 +345,27 @@ void BlockStorage<Block,Key>::double_storage()
     auto buffer = std::make_unique<char[]>(index_size_);
 
     // move to the start of the index
-    block_file_.seekg(- file_size_ - index_size_ - footer_size_, std::ios::end);
+    std::streamoff offset = 0;
+    offset -= old_size + index_size_ + footer_size_;
+    std::cerr << "seeking to index at: " << offset << std::endl;
+    block_file_.seekg(offset, std::ios::end);
     // read the index into the buffer
     block_file_.read(buffer.get(), index_size_);
     // move to the start position of the new index
-    block_file_.seekp(             - index_size_ - footer_size_, std::ios::end);
+
+    offset = 0;
+    offset -= index_size_ + footer_size_;
+    std::cerr << "new index will be writtin at: " << offset << std::endl;
+    block_file_.seekp(offset, std::ios::end);
     // write the new index
     block_file_.write(buffer.get(), index_size_);
+    std::cerr << "block_file_.tellp(): " << block_file_.tellp() << std::endl;
     block_file_.write(reinterpret_cast<const char *>(&data_size_), sizeof(data_size_));
+    std::cerr << "block_file_.tellp(): " << block_file_.tellp() << std::endl;
     block_file_.write(reinterpret_cast<const char *>(&index_size_), sizeof(index_size_));
+    block_file_.flush();
 
-    // reset all our counters
-    file_size_ = new_size;
+    std::cerr << "END double_storage()" << std::endl;
 }
 
 // must be executed under lock
@@ -372,9 +399,12 @@ std::shared_ptr<Block> BlockStorage<Block,Key>::grow_index(Key const & key)
 
     // write the counters to disk
     seekp_to_data_size();
+    std::cerr << "block_file_.tellp(): " << block_file_.tellp() << std::endl;
     block_file_.write(reinterpret_cast<const char *>(&data_size_), sizeof(data_size_));
     seekp_to_index_size();
+    std::cerr << "block_file_.tellp(): " << block_file_.tellp() << std::endl;
     block_file_.write(reinterpret_cast<const char *>(&index_size_), sizeof(index_size_));
+    block_file_.flush();
 
     // increment our offset
     offset_++;

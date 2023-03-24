@@ -122,7 +122,7 @@ TEST(BlockTest, BigDataRandomKeys) {
     auto path = std::filesystem::temp_directory_path() / "block_test_big_data.blk";
     auto temp = temp_file(path); // RIAA to remove temp file
 
-    BlockStorage<BigData,int> blocks(path, 100);
+    BlockStorage<int,BigData> blocks(path, 100);
 
     size_t count = 1e4;
     std::map<int,int> test_data;
@@ -152,7 +152,7 @@ TEST(BlockTest, BigData) {
     auto path = std::filesystem::temp_directory_path() / "block_test_big_data.blk";
     auto temp = temp_file(path); // RIAA to remove temp file
 
-    BlockStorage<BigData,int> blocks(path, 1);
+    BlockStorage<int,BigData> blocks(path, 1);
 
     size_t count = 1e4;
     for(int i = 0; i < count; i++) {

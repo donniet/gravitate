@@ -59,29 +59,11 @@ struct FixedReadWriter<std::array<T,N>> : public std::enable_if_t<std::is_arithm
 // Block and Key should be default constructable
 // Blocks and Keys must all serialize to the same bytesize
 // Keys can never be destroyed
-template<typename Block, typename Key>
+template<typename Key, typename Block>
 class BlockStorage {
 public:
     /* ScopedWrapper is a cursor that will save when destroyed */
-    class ScopedWrapper {
-        friend class BlockStorage<Block, Key>;
-    public:
-        ~ScopedWrapper();
-        ScopedWrapper(ScopedWrapper const &);
-        ScopedWrapper(ScopedWrapper &&) noexcept;
-
-        Key const & key() const;
-
-        void save() const;
-
-        Block & operator*() const;
-        std::shared_ptr<Block> operator->() const;
-    private:
-        ScopedWrapper(BlockStorage<Block, Key> * storage, std::shared_ptr<Block> block, Key const & key);
-        BlockStorage<Block, Key> * storage_;
-        std::shared_ptr<Block> block_;
-        Key key_;
-    };
+    class ScopedWrapper;
 
     ScopedWrapper get(Key const &key);
     ScopedWrapper operator[](Key const &key) { return get(key); }
@@ -92,8 +74,8 @@ public:
 
 
     BlockStorage(std::string const & path, size_t maximum_loaded_blocks = 1);
-    BlockStorage(BlockStorage<Block, Key> const &) = delete;
-    BlockStorage(BlockStorage<Block, Key> &&) noexcept;
+    BlockStorage(BlockStorage<Key, Block> const &) = delete;
+    BlockStorage(BlockStorage<Key, Block> &&) noexcept;
     ~BlockStorage();
 
     void dump(ostream & os);
@@ -153,16 +135,38 @@ private:
     std::mutex mutex_;
 };
 
-template<typename Block, typename Key>
-BlockStorage<Block,Key>::BlockStorage(std::string const & path, size_t maximum_loaded_blocks)
+template<typename Key, typename Block>
+class BlockStorage<Key,Block>::ScopedWrapper {
+    friend class BlockStorage<Key, Block>;
+public:
+    ~ScopedWrapper();
+    ScopedWrapper(ScopedWrapper const &);
+    ScopedWrapper(ScopedWrapper &&) noexcept;
+
+    Key const & key() const;
+
+    void save() const;
+
+    Block & operator*() const;
+    std::shared_ptr<Block> operator->() const;
+private:
+    ScopedWrapper(BlockStorage<Key, Block> * storage, std::shared_ptr<Block> block, Key const & key);
+    BlockStorage<Key, Block> * storage_;
+    std::shared_ptr<Block> block_;
+    Key key_;
+};
+
+
+template<typename Key, typename Block>
+BlockStorage<Key,Block>::BlockStorage(std::string const & path, size_t maximum_loaded_blocks)
     : next_block_index_(0), maximum_loaded_blocks_(maximum_loaded_blocks), path_(path), index_size_(0), data_size_(0), file_size_(0),
       cache_hit_(0), cache_miss_(0), block_size_(0), key_size_(0), footer_size_(sizeof(data_size_) + sizeof(index_size_))
 { 
     open_file();
 }
 
-template<typename Block, typename Key>
-BlockStorage<Block,Key>::BlockStorage(BlockStorage<Block,Key> && other) noexcept
+template<typename Key, typename Block>
+BlockStorage<Key,Block>::BlockStorage(BlockStorage<Key,Block> && other) noexcept
     : index_(std::move(other.index_)), next_block_index_(other.next_block_index_),
       loaded_(std::move(other.loaded_)), 
       keys_(std::move(other.keys_)), maximum_loaded_blocks_(other.maximum_loaded_blocks_), block_file_(std::move(other.block_file_)), path_(std::move(other.path_)),
@@ -173,8 +177,8 @@ BlockStorage<Block,Key>::BlockStorage(BlockStorage<Block,Key> && other) noexcept
 { }
 
 
-template<typename Block, typename Key>
-BlockStorage<Block,Key>::~BlockStorage() 
+template<typename Key, typename Block>
+BlockStorage<Key,Block>::~BlockStorage() 
 {
     // lock the class
     std::unique_lock<std::mutex> guard(mutex_);
@@ -183,16 +187,16 @@ BlockStorage<Block,Key>::~BlockStorage()
 }
 
 // assumes under lock
-template<typename Block, typename Key>
-void BlockStorage<Block,Key>::update_file_size()
+template<typename Key, typename Block>
+void BlockStorage<Key,Block>::update_file_size()
 {
     block_file_.seekg(0, std::ios::end);
     file_size_ = block_file_.tellg();
 }
 
 // assumes under lock
-template<typename Block, typename Key>
-bool BlockStorage<Block, Key>::read_block(Key const & key, Block & block) 
+template<typename Key, typename Block>
+bool BlockStorage<Key, Block>::read_block(Key const & key, Block & block) 
 {
     auto it = index_.find(key);
     if(it == index_.end()) {
@@ -204,22 +208,22 @@ bool BlockStorage<Block, Key>::read_block(Key const & key, Block & block)
     return true;
 }
 
-template<typename Block, typename Key>
-size_t BlockStorage<Block,Key>::cache_hits() {
+template<typename Key, typename Block>
+size_t BlockStorage<Key,Block>::cache_hits() {
     std::unique_lock<std::mutex> guard(mutex_);
 
     return cache_hit_;
 }
 
-template<typename Block, typename Key>
-size_t BlockStorage<Block,Key>::cache_misses() {
+template<typename Key, typename Block>
+size_t BlockStorage<Key,Block>::cache_misses() {
     std::unique_lock<std::mutex> guard(mutex_);
 
     return cache_miss_;
 }
 
-template<typename Block, typename Key>
-void BlockStorage<Block, Key>::dump(ostream & os) 
+template<typename Key, typename Block>
+void BlockStorage<Key, Block>::dump(ostream & os) 
 {
     // lock
     std::unique_lock<std::mutex> guard(mutex_);
@@ -255,30 +259,30 @@ void BlockStorage<Block, Key>::dump(ostream & os)
     os << "done." << std::endl;
 }
 
-template<typename Block, typename Key>
-void BlockStorage<Block,Key>::close_file()
+template<typename Key, typename Block>
+void BlockStorage<Key,Block>::close_file()
 {
     block_file_.close();
 }
 
-template<typename Block, typename Key>
-void BlockStorage<Block,Key>::write_footer() 
+template<typename Key, typename Block>
+void BlockStorage<Key,Block>::write_footer() 
 {
     block_file_.write(reinterpret_cast<const char *>(&data_size_), sizeof(data_size_));
     block_file_.write(reinterpret_cast<const char *>(&index_size_), sizeof(index_size_));
     block_file_.flush();
 }
 
-template<typename Block, typename Key>
-void BlockStorage<Block,Key>::read_footer()
+template<typename Key, typename Block>
+void BlockStorage<Key,Block>::read_footer()
 {
     block_file_.seekg(footer_streampos_, std::ios::beg);
     block_file_.read(reinterpret_cast<char *>(&data_size_), sizeof(data_size_));
     block_file_.read(reinterpret_cast<char *>(&index_size_), sizeof(index_size_));
 }
 
-template<typename Block, typename Key>
-void BlockStorage<Block,Key>::measure_sizes()
+template<typename Key, typename Block>
+void BlockStorage<Key,Block>::measure_sizes()
 {
     // figure out how big the block and key is
     auto pb = std::make_shared<Block>();
@@ -304,8 +308,8 @@ void BlockStorage<Block,Key>::measure_sizes()
     std::filesystem::remove(temp_path);
 }
 
-template<typename Block, typename Key>
-void BlockStorage<Block,Key>::open_file(size_t resize_old_size) 
+template<typename Key, typename Block>
+void BlockStorage<Key,Block>::open_file(size_t resize_old_size) 
 {
     measure_sizes();
 
@@ -363,8 +367,8 @@ void BlockStorage<Block,Key>::open_file(size_t resize_old_size)
 
 }
 
-template<typename Block, typename Key>
-void BlockStorage<Block,Key>::save_one(Key const & key) 
+template<typename Key, typename Block>
+void BlockStorage<Key,Block>::save_one(Key const & key) 
 {
     std::unique_lock<std::mutex> guard(mutex_);
 
@@ -386,8 +390,8 @@ void BlockStorage<Block,Key>::save_one(Key const & key)
 }
 
 /* MUST execute under a lock */
-template<typename Block, typename Key>
-void BlockStorage<Block,Key>::remove_one_from_mem() 
+template<typename Key, typename Block>
+void BlockStorage<Key,Block>::remove_one_from_mem() 
 {
     if(keys_.size() == 0) return;
 
@@ -397,8 +401,8 @@ void BlockStorage<Block,Key>::remove_one_from_mem()
 }
 
 /* must be executed under lock */
-template<typename Block, typename Key>
-void BlockStorage<Block,Key>::increase_storage(size_t increase_by)
+template<typename Key, typename Block>
+void BlockStorage<Key,Block>::increase_storage(size_t increase_by)
 {
 
     size_t old_size = file_size_;
@@ -428,8 +432,8 @@ void BlockStorage<Block,Key>::increase_storage(size_t increase_by)
 }
 
 // must be executed under lock
-template<typename Block, typename Key>
-std::shared_ptr<Block> BlockStorage<Block,Key>::grow_index(Key const & key)
+template<typename Key, typename Block>
+std::shared_ptr<Block> BlockStorage<Key,Block>::grow_index(Key const & key)
 {
     // do we have enough space for the new data?
     if( data_size_ + block_size_ +                  // current_data + new_data
@@ -474,8 +478,8 @@ std::shared_ptr<Block> BlockStorage<Block,Key>::grow_index(Key const & key)
     return pb;
 }
 
-template<typename Block, typename Key>
-typename BlockStorage<Block,Key>::ScopedWrapper BlockStorage<Block,Key>::get(Key const &key) 
+template<typename Key, typename Block>
+typename BlockStorage<Key,Block>::ScopedWrapper BlockStorage<Key,Block>::get(Key const &key) 
 {
     std::unique_lock<std::mutex> guard(mutex_);
 
@@ -510,107 +514,107 @@ typename BlockStorage<Block,Key>::ScopedWrapper BlockStorage<Block,Key>::get(Key
 
     keys_.push_back(key);
     loaded_[key] = block;
-    return BlockStorage<Block,Key>::ScopedWrapper(this, block, key);
+    return BlockStorage<Key,Block>::ScopedWrapper(this, block, key);
 }
 
 
-template<typename Block, typename Key>
-void BlockStorage<Block,Key>::seekp_to_data() 
+template<typename Key, typename Block>
+void BlockStorage<Key,Block>::seekp_to_data() 
 {
     block_file_.seekp(0, std::ios::beg);
 }
-template<typename Block, typename Key>
-void BlockStorage<Block,Key>::seekp_to_block(size_t index) 
+template<typename Key, typename Block>
+void BlockStorage<Key,Block>::seekp_to_block(size_t index) 
 {
     block_file_.seekp(data_streampos_ + (std::streampos)(index * block_size_), std::ios::beg);
 }
-template<typename Block, typename Key>
-void BlockStorage<Block,Key>::seekp_to_index() 
+template<typename Key, typename Block>
+void BlockStorage<Key,Block>::seekp_to_index() 
 {
     block_file_.seekp(index_streampos_, std::ios::beg);
 }
-template<typename Block, typename Key>
-void BlockStorage<Block,Key>::seekp_to_data_size() 
+template<typename Key, typename Block>
+void BlockStorage<Key,Block>::seekp_to_data_size() 
 {
     block_file_.seekp(footer_streampos_, std::ios::beg);
 }
-template<typename Block, typename Key>
-void BlockStorage<Block,Key>::seekp_to_index_size() 
+template<typename Key, typename Block>
+void BlockStorage<Key,Block>::seekp_to_index_size() 
 {
     block_file_.seekp(footer_streampos_ + (std::streampos)sizeof(size_t), std::ios::beg);
 }
-template<typename Block, typename Key>
-void BlockStorage<Block,Key>::seekg_to_data() 
+template<typename Key, typename Block>
+void BlockStorage<Key,Block>::seekg_to_data() 
 {
     block_file_.seekg(data_streampos_, std::ios::beg);
 }
-template<typename Block, typename Key>
-void BlockStorage<Block,Key>::seekg_to_block(size_t index) 
+template<typename Key, typename Block>
+void BlockStorage<Key,Block>::seekg_to_block(size_t index) 
 {
     block_file_.seekg(data_streampos_ + (std::streampos)(index * block_size_), std::ios::beg);
 }
-template<typename Block, typename Key>
-void BlockStorage<Block,Key>::seekg_to_index() 
+template<typename Key, typename Block>
+void BlockStorage<Key,Block>::seekg_to_index() 
 {
     block_file_.seekg(index_streampos_, std::ios::beg);
 }
-template<typename Block, typename Key>
-void BlockStorage<Block,Key>::seekg_to_data_size() 
+template<typename Key, typename Block>
+void BlockStorage<Key,Block>::seekg_to_data_size() 
 {
     block_file_.seekg(footer_streampos_, std::ios::beg);
 }
-template<typename Block, typename Key>
-void BlockStorage<Block,Key>::seekg_to_index_size() 
+template<typename Key, typename Block>
+void BlockStorage<Key,Block>::seekg_to_index_size() 
 {
     block_file_.seekg(footer_streampos_ + (std::streampos)sizeof(size_t), std::ios::beg);
 }
 
 
 
-template<typename Block, typename Key>
-BlockStorage<Block,Key>::ScopedWrapper::ScopedWrapper(
-    BlockStorage<Block,Key> * storage, 
+template<typename Key, typename Block>
+BlockStorage<Key,Block>::ScopedWrapper::ScopedWrapper(
+    BlockStorage<Key,Block> * storage, 
     std::shared_ptr<Block> block,
     Key const & key)
     : storage_(storage), block_(block), key_(key)
 { }
 
-template<typename Block, typename Key>
-BlockStorage<Block,Key>::ScopedWrapper::ScopedWrapper(ScopedWrapper const & other)
+template<typename Key, typename Block>
+BlockStorage<Key,Block>::ScopedWrapper::ScopedWrapper(ScopedWrapper const & other)
     : storage_(other.storage), block_(other.block), key_(other.key)
 { }
 
-template<typename Block, typename Key>
-BlockStorage<Block,Key>::ScopedWrapper::ScopedWrapper(ScopedWrapper && other) noexcept
+template<typename Key, typename Block>
+BlockStorage<Key,Block>::ScopedWrapper::ScopedWrapper(ScopedWrapper && other) noexcept
     : storage_(other.storage), block_(std::move(other.block)), key_(std::move(other.key))
 { }
 
-template<typename Block, typename Key>
-Key const & BlockStorage<Block,Key>::ScopedWrapper::key() const
+template<typename Key, typename Block>
+Key const & BlockStorage<Key,Block>::ScopedWrapper::key() const
 {
     return key_;
 }
 
-template<typename Block, typename Key>
-void BlockStorage<Block,Key>::ScopedWrapper::save() const
+template<typename Key, typename Block>
+void BlockStorage<Key,Block>::ScopedWrapper::save() const
 { 
     storage_->save_one(key_);
 }
 
-template<typename Block, typename Key>
-BlockStorage<Block,Key>::ScopedWrapper::~ScopedWrapper()
+template<typename Key, typename Block>
+BlockStorage<Key,Block>::ScopedWrapper::~ScopedWrapper()
 {
     save();
 }
 
-template<typename Block, typename Key>
-Block & BlockStorage<Block,Key>::ScopedWrapper::operator*() const
+template<typename Key, typename Block>
+Block & BlockStorage<Key,Block>::ScopedWrapper::operator*() const
 {
     return *block_;
 }
 
-template<typename Block, typename Key>
-std::shared_ptr<Block> BlockStorage<Block,Key>::ScopedWrapper::operator->() const
+template<typename Key, typename Block>
+std::shared_ptr<Block> BlockStorage<Key,Block>::ScopedWrapper::operator->() const
 {
     return block_;
 }

@@ -118,6 +118,36 @@ template<> struct FixedReadWriter<BigData> {
     }
 };
 
+TEST(BlockTest, BigDataRandomKeys) {
+    auto path = std::filesystem::temp_directory_path() / "block_test_big_data.blk";
+    auto temp = temp_file(path); // RIAA to remove temp file
+
+    BlockStorage<BigData,int> blocks(path, 100);
+
+    size_t count = 1e4;
+    std::map<int,int> test_data;
+    auto hasher = std::hash<int>();
+    for(int i = 0; i < count; i++) {
+        auto h = hasher(i);
+        auto v = BigData(i);
+        test_data[h] = i;
+        *blocks.get(h) = v;
+    }
+
+    // verify
+    bool valid = true;
+    int i = 0;
+    for(; i < count; i++) {
+        auto v = blocks.get(i);
+        if(test_data[i] != v->data[0]) {
+            valid = false;
+            break;
+        }
+    }
+
+    ASSERT_TRUE(valid);
+}
+
 TEST(BlockTest, BigData) {
     auto path = std::filesystem::temp_directory_path() / "block_test_big_data.blk";
     auto temp = temp_file(path); // RIAA to remove temp file

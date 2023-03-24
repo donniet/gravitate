@@ -87,6 +87,9 @@ public:
     ScopedWrapper operator[](Key const &key) { return get(key); }
     void save_one(Key const &key);
 
+    size_t cache_hits();
+    size_t cache_misses();
+
 
     BlockStorage(std::string const & path, size_t maximum_loaded_blocks = 1);
     BlockStorage(BlockStorage<Block, Key> const &) = delete;
@@ -167,8 +170,7 @@ BlockStorage<Block,Key>::BlockStorage(BlockStorage<Block,Key> && other) noexcept
       cache_hit_(other.cache_hit_), cache_miss_(other.cache_miss_), block_size_(other.block_size_), key_size_(other.key_size_), footer_size_(other.footer_size_),
       blocker_(std::move(other.blocker_)), keyer_(std::move(other.keyer_)),
       mutex_()
-{ 
-}
+{ }
 
 
 template<typename Block, typename Key>
@@ -200,6 +202,20 @@ bool BlockStorage<Block, Key>::read_block(Key const & key, Block & block)
     block_file_.seekg(it->second * block_size_, std::ios::beg);
     blocker_.read(block_file_, block);
     return true;
+}
+
+template<typename Block, typename Key>
+size_t BlockStorage<Block,Key>::cache_hits() {
+    std::unique_lock<std::mutex> guard(mutex_);
+
+    return cache_hit_;
+}
+
+template<typename Block, typename Key>
+size_t BlockStorage<Block,Key>::cache_misses() {
+    std::unique_lock<std::mutex> guard(mutex_);
+
+    return cache_miss_;
 }
 
 template<typename Block, typename Key>

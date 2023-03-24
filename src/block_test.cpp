@@ -3,6 +3,8 @@
 #include <filesystem>
 #include <iostream>
 #include <functional>
+#include <array>
+#include <random>
 
 #include <gtest/gtest.h>
 
@@ -57,12 +59,13 @@ TEST(BlockTest, WriteALot) {
     const int count = 1e4;
 
     for(int i = 0; i < count; i++) {
-        auto v = hasher(i);
-        // auto v = i;
+        // auto v = hasher(i);
+        auto v = i;
         test_data[i] = v;
         *blocks.get(i) = v;
-        // blocks.save_one(i);
     }
+
+    blocks.dump(std::cerr);
 
     // verify
     bool valid = true;
@@ -76,5 +79,51 @@ TEST(BlockTest, WriteALot) {
     }
     std::cerr << "count correct: " << i << std::endl;
 
+    ASSERT_TRUE(valid);
+}
+
+struct BigData {
+    std::array<int,1024> data;
+    BigData(int i) {
+        data[0] = i;
+    }
+    BigData() {}
+};
+
+std::ostream & operator<<(std::ostream & os, const BigData & v) {
+    return os << v.data[0];
+}
+
+template<> struct FixedReadWriter<BigData> {
+    void read(std::istream & is, BigData & v) {
+        is.read(reinterpret_cast<char *>(&v.data[0]), sizeof(int) * 1024);
+    }
+    void write(std::ostream & os, const BigData & v) {
+        os.write(reinterpret_cast<const char *>(&v.data[0]), sizeof(int) * 1024);
+    }
+};
+
+TEST(BlockTest, BigData) {
+    auto path = std::filesystem::temp_directory_path() / "block_test_big_data.blk";
+    auto temp = temp_file(path); // RIAA to remove temp file
+
+    auto blocks = BlockStorage<BigData,int>::create_or_open(path, 1);
+
+    size_t count = 1e4;
+    for(int i = 0; i < count; i++) {
+        *blocks.get(i) = BigData(i);
+    }
+
+    // verify
+    bool valid = true;
+    int i = 0;
+    for(; i < count; i++) {
+        auto v = blocks.get(i);
+        if(v->data[0] != i) {
+            valid = false;
+            break;
+        }
+    }
+    std::cerr << "count correct: " << i << std::endl;
     ASSERT_TRUE(valid);
 }

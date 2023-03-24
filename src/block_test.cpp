@@ -22,8 +22,6 @@ void create_block_file(string const & path) {
     auto blocks = BlockStorage<int,int>::create_or_open(path, 10);
     *blocks.get(0) = -1;
     blocks.save_one(0);
-
-    blocks.dump(std::cerr);
 }
 
 TEST(BlockTest, CreateBlock) {
@@ -64,8 +62,6 @@ TEST(BlockTest, WriteALot) {
         test_data[i] = v;
         *blocks.get(i) = v;
     }
-
-    blocks.dump(std::cerr);
 
     // verify
     bool valid = true;

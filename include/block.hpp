@@ -142,7 +142,6 @@ BlockStorage<Block,Key>::BlockStorage(BlockStorage<Block,Key> && other) noexcept
       blocker_(std::move(other.blocker_)), keyer_(std::move(other.keyer_)),
       mutex_()
 { 
-    std::cerr << "moved." << std::endl;
 }
 
 
@@ -257,9 +256,6 @@ void BlockStorage<Block,Key>::measure_sizes()
     b = t.tellp();
     key_size_ = b - e;
 
-    std::cerr << "key size: " << key_size_ << "\n";
-    std::cerr << "block size: " << block_size_ << std::endl;
-
     t.close();
     std::filesystem::remove(temp_path);
 }
@@ -272,7 +268,6 @@ void BlockStorage<Block,Key>::open_file(size_t resize_old_size)
     block_file_.open(path_, std::fstream::in | std::fstream::out | std::fstream::binary);
 
     if(!block_file_ && errno == ENOENT) {
-        std::cerr << "creating the file: " << std::endl;
         // create the file
         block_file_.open(path_, std::fstream::out | std::fstream::binary);
         block_file_.close();
@@ -292,7 +287,6 @@ void BlockStorage<Block,Key>::open_file(size_t resize_old_size)
     update_file_size();
 
     if(file_size_ == 0) {
-        std::cerr << "zero file size." << std::endl;
         index_size_ = 0;
         data_size_ = 0;
         write_footer();
@@ -305,7 +299,6 @@ void BlockStorage<Block,Key>::open_file(size_t resize_old_size)
         footer_offset_ = index_offset_ = block_file_.tellg();
     } else {
         // read the footer
-        std::cerr << "non-zero file size" << std::endl;
         block_file_.seekg(-(long long)footer_size_, std::ios::end);
         footer_offset_ = block_file_.tellg();
         read_footer();
@@ -340,7 +333,6 @@ BlockStorage<Block,Key> BlockStorage<Block,Key>::create_or_open(string const & f
 template<typename Block, typename Key>
 void BlockStorage<Block,Key>::save_one(Key const & key) 
 {
-    std::cerr << "saving: " << key;
     std::unique_lock<std::mutex> guard(mutex_);
 
     auto it = index_.find(key);
@@ -348,10 +340,8 @@ void BlockStorage<Block,Key>::save_one(Key const & key)
         return;
 
     seekp_to_block(it->second);
-    std::cerr << " value: " << *loaded_[key] << std::endl;
     blocker_.write(block_file_, *loaded_[key]);
     if(!block_file_ && errno != 0) {
-        std::cerr << " error: " << std::strerror(errno) << std::endl;
         throw std::logic_error("error writing block");
     }
     // lets read it back in just to make sure
@@ -359,7 +349,6 @@ void BlockStorage<Block,Key>::save_one(Key const & key)
     
     Block b;
     blocker_.read(block_file_, b);
-    std::cerr << " value: " << b << std::endl;
     // block_file_.flush();
 }
 
@@ -370,7 +359,6 @@ void BlockStorage<Block,Key>::remove_one_from_mem()
     if(keys_.size() == 0) return;
 
     auto key_to_remove = keys_.front();
-    std::cerr << "removing: " << key_to_remove << std::endl;
     keys_.pop_front();
     loaded_.erase(key_to_remove);
 }
@@ -379,13 +367,9 @@ void BlockStorage<Block,Key>::remove_one_from_mem()
 template<typename Block, typename Key>
 void BlockStorage<Block,Key>::increase_storage(size_t increase_by)
 {
-    std::cerr << "double_storage()" << std::endl;
 
     size_t old_size = file_size_;
     size_t new_size = file_size_ + increase_by;
-
-    std::cerr << "new_size: " << new_size << std::endl;
-    std::cerr << "path: " << path_ << std::endl;
 
     block_file_.close();
     std::filesystem::resize_file(path_, new_size);
@@ -409,8 +393,6 @@ void BlockStorage<Block,Key>::increase_storage(size_t increase_by)
     footer_offset_ = block_file_.tellp();
     write_footer();
     update_file_size();
-
-    std::cerr << "END double_storage()" << std::endl;
 }
 
 // must be executed under lock
@@ -424,8 +406,10 @@ std::shared_ptr<Block> BlockStorage<Block,Key>::grow_index(Key const & key)
         file_size_) 
     {
         if(file_size_ < block_size_ + key_size_ + sizeof(size_t)) {
+            // make space for at least one more block
             increase_storage(block_size_ + key_size_ + sizeof(size_t));
         } else {
+            // otherwise double the size of the file
             increase_storage(file_size_);
         }
     }
@@ -448,10 +432,8 @@ std::shared_ptr<Block> BlockStorage<Block,Key>::grow_index(Key const & key)
 
     // write the counters to disk
     seekp_to_data_size();
-    // std::cerr << "block_file_.tellp(): " << block_file_.tellp() << std::endl;
     block_file_.write(reinterpret_cast<const char *>(&data_size_), sizeof(data_size_));
     seekp_to_index_size();
-    // std::cerr << "block_file_.tellp(): " << block_file_.tellp() << std::endl;
     block_file_.write(reinterpret_cast<const char *>(&index_size_), sizeof(index_size_));
     block_file_.flush();
 
@@ -472,17 +454,12 @@ typename BlockStorage<Block,Key>::ScopedWrapper BlockStorage<Block,Key>::get(Key
         throw std::runtime_error(ss.str());
     }
 
-    std::cerr << "get(" << key << ")" << std::endl;
-
     auto it = loaded_.find(key);
     if (it != loaded_.end()) 
     {
-        std::cerr << "cache hit." << std::endl;
         ++cache_hit_;
         return ScopedWrapper(this, it->second, key);
     }
-
-    std::cerr << "cache miss." << std::endl;
     ++cache_miss_;
     if (loaded_.size() >= maximum_loaded_blocks_) 
         remove_one_from_mem(); 
@@ -491,16 +468,12 @@ typename BlockStorage<Block,Key>::ScopedWrapper BlockStorage<Block,Key>::get(Key
 
     auto ip = index_.find(key);
     if (ip == index_.end()) {
-        std::cerr << "new key" << std::endl;
         block = grow_index(key);
     } else {    
-        std::cerr << "old key, restore from disk: " << ip->second << std::endl;
         // load the block from disk
         block = std::make_shared<Block>();
         seekg_to_block(ip->second);
         blocker_.read(block_file_, *block);
-
-        std::cerr << "value: " << *block << std::endl;
     }
 
     keys_.push_back(key);

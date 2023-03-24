@@ -10,6 +10,7 @@
 #include <exception>
 #include <sstream>
 #include <thread>
+#include <array>
 
 
 using std::istream;
@@ -19,18 +20,50 @@ using std::string;
 
 template<typename T>
 struct FixedReadWriter {
+    typedef T data_type;
     void read(istream & is, T & data);
     void write(ostream & os, T const & data);
 };
 
-template<> struct FixedReadWriter<int> {
-    void read(istream & is, int & data) {
-        is.read(reinterpret_cast<char *>(&data), sizeof(int));
+#define POD_FIXED_READ_WRITER_SPECIALIZATION(T) \
+    template<> struct FixedReadWriter<T> { \
+        typedef T data_type; \
+        void read(istream & is, T & data) { \
+            is.read(reinterpret_cast<char *>(&data), sizeof(T)); \
+        } \
+        void write(ostream & os, T const & data) { \
+            os.write(reinterpret_cast<const char *>(&data), sizeof(T)); \
+        } \
+    };
+
+// declare FixedReadWriters for all the plain-old-data types
+POD_FIXED_READ_WRITER_SPECIALIZATION(int)
+POD_FIXED_READ_WRITER_SPECIALIZATION(long)
+POD_FIXED_READ_WRITER_SPECIALIZATION(long long)
+POD_FIXED_READ_WRITER_SPECIALIZATION(double)
+POD_FIXED_READ_WRITER_SPECIALIZATION(float)
+POD_FIXED_READ_WRITER_SPECIALIZATION(char)
+POD_FIXED_READ_WRITER_SPECIALIZATION(bool)
+
+template<typename T, size_t N>
+struct FixedReadWriter<std::array<T,N>> : public std::enable_if_t<std::is_arithmetic<T>::value> {
+    typedef std::array<T,N> data_type;
+    void read(istream & is, std::array<T,N> & data) {
+        is.read(reinterpret_cast<char *>(&data[0]), sizeof(T) * N);
     }
-    void write(ostream & os, int const & data) {
-        os.write(reinterpret_cast<const char *>(&data), sizeof(int));
+    void write(ostream & os, std::array<T,N> const & data) {
+        os.write(reinterpret_cast<const char *>(&data[0]), sizeof(T) * N);
     }
 };
+
+// template<> struct FixedReadWriter<int> {
+//     void read(istream & is, int & data) {
+//         is.read(reinterpret_cast<char *>(&data), sizeof(int));
+//     }
+//     void write(ostream & os, int const & data) {
+//         os.write(reinterpret_cast<const char *>(&data), sizeof(int));
+//     }
+// };
 
 // Block and Key should be default constructable
 // Blocks and Keys must all serialize to the same bytesize
@@ -152,7 +185,7 @@ BlockStorage<Block,Key>::~BlockStorage()
 {
     // lock the class
     std::unique_lock<std::mutex> guard(mutex_);
-    
+
     close_file();
 }
 

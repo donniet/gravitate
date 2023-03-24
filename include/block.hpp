@@ -38,6 +38,7 @@ template<> struct FixedReadWriter<int> {
 template<typename Block, typename Key>
 class BlockStorage {
 public:
+    /* ScopedWrapper is a cursor that will save when destroyed */
     class ScopedWrapper {
         friend class BlockStorage<Block, Key>;
     public:
@@ -59,19 +60,18 @@ public:
     };
 
     ScopedWrapper get(Key const &key);
+    ScopedWrapper operator[](Key const &key) { return get(key); }
     void save_one(Key const &key);
-    // saves everything to disk
-    void save_all();
 
-    static BlockStorage<Block, Key> create_or_open(string const & file_name, size_t maximum_loaded_blocks);
 
+    BlockStorage(std::string const & path, size_t maximum_loaded_blocks = 1);
     BlockStorage(BlockStorage<Block, Key> const &) = delete;
     BlockStorage(BlockStorage<Block, Key> &&) noexcept;
     ~BlockStorage();
 
     void dump(ostream & os);
+
 private:
-    BlockStorage();
 
     void remove_one_from_mem();
     void increase_storage(size_t);
@@ -97,7 +97,7 @@ private:
     void read_footer();
 
     std::map<Key,size_t> index_;
-    size_t offset_;
+    size_t next_block_index_;
 
     std::map<Key,std::shared_ptr<Block>> loaded_;
     
@@ -116,9 +116,9 @@ private:
     size_t key_size_;
     size_t footer_size_;
 
-    std::streampos data_offset_;
-    std::streampos index_offset_;
-    std::streampos footer_offset_;
+    std::streampos data_streampos_;
+    std::streampos index_streampos_;
+    std::streampos footer_streampos_;
 
     FixedReadWriter<Block> blocker_;
     FixedReadWriter<Key> keyer_;
@@ -127,14 +127,16 @@ private:
 };
 
 template<typename Block, typename Key>
-BlockStorage<Block,Key>::BlockStorage()
-    : offset_(0), maximum_loaded_blocks_(0), index_size_(0), data_size_(0), file_size_(0),
+BlockStorage<Block,Key>::BlockStorage(std::string const & path, size_t maximum_loaded_blocks)
+    : next_block_index_(0), maximum_loaded_blocks_(maximum_loaded_blocks), path_(path), index_size_(0), data_size_(0), file_size_(0),
       cache_hit_(0), cache_miss_(0), block_size_(0), key_size_(0), footer_size_(sizeof(data_size_) + sizeof(index_size_))
-{ }
+{ 
+    open_file();
+}
 
 template<typename Block, typename Key>
 BlockStorage<Block,Key>::BlockStorage(BlockStorage<Block,Key> && other) noexcept
-    : index_(std::move(other.index_)), offset_(other.offset_),
+    : index_(std::move(other.index_)), next_block_index_(other.next_block_index_),
       loaded_(std::move(other.loaded_)), 
       keys_(std::move(other.keys_)), maximum_loaded_blocks_(other.maximum_loaded_blocks_), block_file_(std::move(other.block_file_)), path_(std::move(other.path_)),
       index_size_(other.index_size_), data_size_(other.data_size_), file_size_(other.file_size_),
@@ -157,7 +159,6 @@ void BlockStorage<Block,Key>::update_file_size()
 {
     block_file_.seekg(0, std::ios::end);
     file_size_ = block_file_.tellg();
-    block_file_.seekg(0, std::ios::beg);
 }
 
 // assumes under lock
@@ -189,7 +190,7 @@ void BlockStorage<Block, Key>::dump(ostream & os)
     os << "\tblock_size: " << block_size_ << std::endl;
     os << "\tkey_size: " << key_size_ << std::endl;
     os << "\tmaximum_loaded_blocks: " << maximum_loaded_blocks_ << std::endl;
-    os << "\tnext_index: " << offset_ << std::endl;
+    os << "\tnext_index: " << next_block_index_ << std::endl;
     os << "\tblocks loaded:\n";
     for(auto const & kv : loaded_) {
         os << kv.first << " ";
@@ -197,7 +198,7 @@ void BlockStorage<Block, Key>::dump(ostream & os)
     os << std::endl;
     os << "\tindex:\n";
     for(auto const & kv : index_) {
-        os << "\t\t" << kv.first << ": " << kv.second << std::endl;
+        os << "{" << kv.first << ": " << kv.second << "} ";
     }
     os << std::endl;
     os << "\tblocks:\n";
@@ -228,7 +229,7 @@ void BlockStorage<Block,Key>::write_footer()
 template<typename Block, typename Key>
 void BlockStorage<Block,Key>::read_footer()
 {
-    block_file_.seekg(-footer_offset_, std::ios::end);
+    block_file_.seekg(footer_streampos_, std::ios::beg);
     block_file_.read(reinterpret_cast<char *>(&data_size_), sizeof(data_size_));
     block_file_.read(reinterpret_cast<char *>(&index_size_), sizeof(index_size_));
 }
@@ -287,6 +288,7 @@ void BlockStorage<Block,Key>::open_file(size_t resize_old_size)
     update_file_size();
 
     if(file_size_ == 0) {
+        // this is a new file, write the footer and set the offsets
         index_size_ = 0;
         data_size_ = 0;
         write_footer();
@@ -294,17 +296,17 @@ void BlockStorage<Block,Key>::open_file(size_t resize_old_size)
         update_file_size();
 
         block_file_.seekg(0, std::ios::beg);
-        data_offset_ = block_file_.tellg();
+        data_streampos_ = block_file_.tellg();
         block_file_.seekg(-(long long)footer_size_, std::ios::end);
-        footer_offset_ = index_offset_ = block_file_.tellg();
+        footer_streampos_ = index_streampos_ = block_file_.tellg();
     } else {
         // read the footer
         block_file_.seekg(-(long long)footer_size_, std::ios::end);
-        footer_offset_ = block_file_.tellg();
+        footer_streampos_ = block_file_.tellg();
         read_footer();
 
         block_file_.seekg(-(long long)index_size_ - (long long)footer_size_, std::ios::end);
-        index_offset_ = block_file_.tellg();
+        index_streampos_ = block_file_.tellg();
         size_t off;
         Key k;
 
@@ -316,18 +318,6 @@ void BlockStorage<Block,Key>::open_file(size_t resize_old_size)
         }
     }
 
-}
-
-template<typename Block, typename Key>
-BlockStorage<Block,Key> BlockStorage<Block,Key>::create_or_open(string const & file_name, size_t maximum_loaded_blocks)
-{
-    BlockStorage<Block,Key> storage;
-    storage.maximum_loaded_blocks_ = maximum_loaded_blocks;
-    storage.path_ = file_name;
-
-    storage.open_file();
-
-    return storage;
 }
 
 template<typename Block, typename Key>
@@ -380,17 +370,17 @@ void BlockStorage<Block,Key>::increase_storage(size_t increase_by)
     auto buffer = std::make_unique<char[]>(index_size_);
 
     // move to the start of the index
-    block_file_.seekg(index_offset_, std::ios::beg);
+    block_file_.seekg(index_streampos_, std::ios::beg);
     // read the index into the buffer
     block_file_.read(buffer.get(), index_size_);
 
     // move to the start position of the new index
     block_file_.seekp(-(long long)index_size_ - (long long)footer_size_, std::ios::end);
-    index_offset_ = block_file_.tellp();
+    index_streampos_ = block_file_.tellp();
     // write the new index
     block_file_.write(buffer.get(), index_size_);
     // get the footer_offset which is at the end of the index
-    footer_offset_ = block_file_.tellp();
+    footer_streampos_ = block_file_.tellp();
     write_footer();
 }
 
@@ -417,12 +407,12 @@ std::shared_ptr<Block> BlockStorage<Block,Key>::grow_index(Key const & key)
     seekp_to_index();
     block_file_.seekp(-(long long)key_size_ - (long long)sizeof(size_t), std::ios::cur); // move backward to fit the key and offset
     keyer_.write(block_file_, key);                                // write the key
-    block_file_.write((char*)&offset_, sizeof(size_t));            // write the offset
-    index_[key] = offset_;                                         // update the index in memory
+    block_file_.write((char*)&next_block_index_, sizeof(size_t));            // write the offset
+    index_[key] = next_block_index_;                                         // update the index in memory
 
     // write a blank block to the blocks
     auto pb = std::make_shared<Block>();
-    seekp_to_block(offset_);
+    seekp_to_block(next_block_index_);
     blocker_.write(block_file_, *pb);
 
     // increment our counters
@@ -437,7 +427,7 @@ std::shared_ptr<Block> BlockStorage<Block,Key>::grow_index(Key const & key)
     block_file_.flush();
 
     // increment our offset
-    offset_++;
+    next_block_index_++;
     return pb;
 }
 
@@ -489,47 +479,47 @@ void BlockStorage<Block,Key>::seekp_to_data()
 template<typename Block, typename Key>
 void BlockStorage<Block,Key>::seekp_to_block(size_t index) 
 {
-    block_file_.seekp(data_offset_ + (std::streampos)(index * block_size_), std::ios::beg);
+    block_file_.seekp(data_streampos_ + (std::streampos)(index * block_size_), std::ios::beg);
 }
 template<typename Block, typename Key>
 void BlockStorage<Block,Key>::seekp_to_index() 
 {
-    block_file_.seekp(index_offset_, std::ios::beg);
+    block_file_.seekp(index_streampos_, std::ios::beg);
 }
 template<typename Block, typename Key>
 void BlockStorage<Block,Key>::seekp_to_data_size() 
 {
-    block_file_.seekp(footer_offset_, std::ios::beg);
+    block_file_.seekp(footer_streampos_, std::ios::beg);
 }
 template<typename Block, typename Key>
 void BlockStorage<Block,Key>::seekp_to_index_size() 
 {
-    block_file_.seekp(footer_offset_ + (std::streampos)sizeof(size_t), std::ios::beg);
+    block_file_.seekp(footer_streampos_ + (std::streampos)sizeof(size_t), std::ios::beg);
 }
 template<typename Block, typename Key>
 void BlockStorage<Block,Key>::seekg_to_data() 
 {
-    block_file_.seekg(data_offset_, std::ios::beg);
+    block_file_.seekg(data_streampos_, std::ios::beg);
 }
 template<typename Block, typename Key>
 void BlockStorage<Block,Key>::seekg_to_block(size_t index) 
 {
-    block_file_.seekg(data_offset_ + (std::streampos)(index * block_size_), std::ios::beg);
+    block_file_.seekg(data_streampos_ + (std::streampos)(index * block_size_), std::ios::beg);
 }
 template<typename Block, typename Key>
 void BlockStorage<Block,Key>::seekg_to_index() 
 {
-    block_file_.seekg(index_offset_, std::ios::beg);
+    block_file_.seekg(index_streampos_, std::ios::beg);
 }
 template<typename Block, typename Key>
 void BlockStorage<Block,Key>::seekg_to_data_size() 
 {
-    block_file_.seekg(footer_offset_, std::ios::beg);
+    block_file_.seekg(footer_streampos_, std::ios::beg);
 }
 template<typename Block, typename Key>
 void BlockStorage<Block,Key>::seekg_to_index_size() 
 {
-    block_file_.seekg(footer_offset_ + (std::streampos)sizeof(size_t), std::ios::beg);
+    block_file_.seekg(footer_streampos_ + (std::streampos)sizeof(size_t), std::ios::beg);
 }
 
 

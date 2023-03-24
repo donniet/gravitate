@@ -19,9 +19,25 @@ struct temp_file {
 };
 
 void create_block_file(string const & path) {
-    auto blocks = BlockStorage<int,int>::create_or_open(path, 10);
+    BlockStorage<int,int> blocks(path, 10);
     *blocks.get(0) = -1;
     blocks.save_one(0);
+}
+
+TEST(BlockTest, CreateAndLoadBlock) {
+    auto path = std::filesystem::temp_directory_path() / "block_test_int_int.blk";
+    auto temp = temp_file(path); // RIAA to remove temp file
+
+    std::cerr << "path: " << path << std::endl;
+
+    auto pblocks = std::make_shared<BlockStorage<int,int>>(path, 10);
+    { *pblocks->get(0) = -1; }
+    pblocks = nullptr;
+
+    pblocks = std::make_shared<BlockStorage<int,int>>(path, 10);
+    int i = *pblocks->get(0);
+
+    ASSERT_EQ(i, -1);
 }
 
 TEST(BlockTest, CreateBlock) {
@@ -36,7 +52,7 @@ TEST(BlockTest, CreateBlock) {
 
     ASSERT_TRUE(std::filesystem::exists(path));
 
-    auto blocks = BlockStorage<int,int>::create_or_open(path, 10);
+    BlockStorage<int,int> blocks(path, 10);
     blocks.dump(std::cerr);
 
     auto i = blocks.get(0);
@@ -51,7 +67,7 @@ TEST(BlockTest, WriteALot) {
 
     std::cerr << "path: " << path << std::endl;
 
-    auto blocks = BlockStorage<int,int>::create_or_open(path, 100);
+    BlockStorage<int,int> blocks(path, 100);
 
     std::map<int,int> test_data;
     auto hasher = std::hash<int>();
@@ -106,7 +122,7 @@ TEST(BlockTest, BigData) {
     auto path = std::filesystem::temp_directory_path() / "block_test_big_data.blk";
     auto temp = temp_file(path); // RIAA to remove temp file
 
-    auto blocks = BlockStorage<BigData,int>::create_or_open(path, 1);
+    BlockStorage<BigData,int> blocks(path, 1);
 
     size_t count = 1e4;
     for(int i = 0; i < count; i++) {

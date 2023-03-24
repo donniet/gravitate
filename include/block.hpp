@@ -150,6 +150,9 @@ BlockStorage<Block,Key>::BlockStorage(BlockStorage<Block,Key> && other) noexcept
 template<typename Block, typename Key>
 BlockStorage<Block,Key>::~BlockStorage() 
 {
+    // lock the class
+    std::unique_lock<std::mutex> guard(mutex_);
+    
     close_file();
 }
 

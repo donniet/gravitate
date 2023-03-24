@@ -40,6 +40,8 @@ TEST(BlockTest, CreateBlock) {
     blocks.dump(std::cerr);
 
     auto i = blocks.get(0);
+
+    std::cerr << "file size: " << std::filesystem::file_size(path) << std::endl;
     ASSERT_EQ(*i, -1);
 }
 
@@ -74,6 +76,7 @@ TEST(BlockTest, WriteALot) {
         }
     }
     std::cerr << "count correct: " << i << std::endl;
+    std::cerr << "file size: " << std::filesystem::file_size(path) << std::endl;
 
     ASSERT_TRUE(valid);
 }
@@ -121,5 +124,7 @@ TEST(BlockTest, BigData) {
         }
     }
     std::cerr << "count correct: " << i << std::endl;
+    std::cerr << "file size: " << std::filesystem::file_size(path) << std::endl;
+
     ASSERT_TRUE(valid);
 }

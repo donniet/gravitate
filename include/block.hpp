@@ -374,6 +374,7 @@ void BlockStorage<Block,Key>::increase_storage(size_t increase_by)
     block_file_.close();
     std::filesystem::resize_file(path_, new_size);
     block_file_.open(path_, std::fstream::in | std::fstream::out | std::fstream::binary);
+    update_file_size();
 
     // copy the index from it's old location to it's new location
     auto buffer = std::make_unique<char[]>(index_size_);
@@ -382,17 +383,15 @@ void BlockStorage<Block,Key>::increase_storage(size_t increase_by)
     block_file_.seekg(index_offset_, std::ios::beg);
     // read the index into the buffer
     block_file_.read(buffer.get(), index_size_);
+
     // move to the start position of the new index
-
-
     block_file_.seekp(-(long long)index_size_ - (long long)footer_size_, std::ios::end);
     index_offset_ = block_file_.tellp();
-
     // write the new index
     block_file_.write(buffer.get(), index_size_);
+    // get the footer_offset which is at the end of the index
     footer_offset_ = block_file_.tellp();
     write_footer();
-    update_file_size();
 }
 
 // must be executed under lock

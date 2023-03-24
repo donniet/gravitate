@@ -56,15 +56,6 @@ struct FixedReadWriter<std::array<T,N>> : public std::enable_if_t<std::is_arithm
     }
 };
 
-// template<> struct FixedReadWriter<int> {
-//     void read(istream & is, int & data) {
-//         is.read(reinterpret_cast<char *>(&data), sizeof(int));
-//     }
-//     void write(ostream & os, int const & data) {
-//         os.write(reinterpret_cast<const char *>(&data), sizeof(int));
-//     }
-// };
-
 // Block and Key should be default constructable
 // Blocks and Keys must all serialize to the same bytesize
 // Keys can never be destroyed

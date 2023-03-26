@@ -11,12 +11,16 @@
 #include <sstream>
 #include <thread>
 #include <array>
+#include <deque>
+#include <mutex>
+#include <cstring>
 
 
 using std::istream;
 using std::ostream;
 using std::fstream;
 using std::string;
+using std::strerror;
 
 template<typename T>
 struct FixedReadWriter {

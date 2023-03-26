@@ -17,7 +17,7 @@ set(Boost_USE_MULTITHREADED ON)
 set(Boost_USE_STATIC_RUNTIME OFF) 
 
 
-find_package(Boost 1.79.0 REQUIRED) 
+find_package(Boost 1.71.0 REQUIRED) 
 find_package(OpenCL REQUIRED)
 
 include_directories(include ${Boost_INCLUDE_DIRS} ${OpenCL_INCLUDE_DIRS}) 

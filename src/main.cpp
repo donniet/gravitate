@@ -1,4 +1,6 @@
 
+#include "grblock.hpp"
+
 #include <iostream>
 #include <algorithm>
 #include <execution>
@@ -187,15 +189,6 @@ template<typename T>
 istream & raw_read(istream & is, T & obj) {
     return is.read(reinterpret_cast<char *>(&obj), sizeof(T));
 }
-
-struct Contravariant {
-    float p[4];
-
-    float operator()(int i) const {
-        return p[i];
-    }
-};
-
 
 class Metric {
 private:

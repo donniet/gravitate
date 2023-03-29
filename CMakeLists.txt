@@ -23,12 +23,16 @@ find_package(OpenCL REQUIRED)
 include_directories(include ${Boost_INCLUDE_DIRS} ${OpenCL_INCLUDE_DIRS}) 
 
 enable_testing()
+
 add_executable(block_test src/block_test.cpp)
 target_link_libraries(block_test GTest::gtest_main)
 
+add_executable(grblock_test src/grblock_test.cpp)
+target_link_libraries(grblock_test GTest::gtest_main)
+
 
 include(GoogleTest)
-gtest_discover_tests(block_test)
+gtest_discover_tests(block_test grblock_test)
 
 
 add_executable(gravitate src/main.cpp)

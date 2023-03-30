@@ -7,6 +7,7 @@
 #include <string>
 #include <map>
 #include <cstdio>
+#include <cstring>
 #include <exception>
 #include <sstream>
 #include <thread>
@@ -333,7 +334,7 @@ void BlockStorage<Key,Block>::open_file(size_t resize_old_size)
 
         // create an error message with the filename using string streams
         std::stringstream ss;
-        ss << "Could not open file: " << path_ << " - " << strerror(errno); 
+        ss << "Could not open file: " << path_ << " - " << std::strerror(errno); 
         throw std::runtime_error(ss.str());
     }
     update_file_size();

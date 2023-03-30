@@ -23,14 +23,16 @@
 #endif
 
 /* creating to fix deprecated function in boost::compute */
-// namespace std {
-//     template<class RandomIt> 
-//     void random_shuffle(RandomIt first, RandomIt last) {
-//         std::random_device rd;
-//         std::mt19937 g(rd());
-//         std::shuffle(first, last, g);
-//     }
-// }
+#ifndef __GNUC__
+namespace std {
+    template<class RandomIt> 
+    void random_shuffle(RandomIt first, RandomIt last) {
+        std::random_device rd;
+        std::mt19937 g(rd());
+        std::shuffle(first, last, g);
+    }
+}
+#endif
 
 #include <boost/compute.hpp>
 

@@ -19,16 +19,20 @@ set(Boost_USE_STATIC_RUNTIME OFF)
 
 find_package(Boost 1.71.0 REQUIRED) 
 find_package(OpenCL REQUIRED)
+find_package(TBB REQUIRED)
 
 include_directories(include ${Boost_INCLUDE_DIRS} ${OpenCL_INCLUDE_DIRS}) 
+# link_libraries(${Boost_LIBRARIES} ${OpenCL_LIBRARIES} TBB::tbb)
 
 enable_testing()
 
 add_executable(block_test src/block_test.cpp)
-target_link_libraries(block_test GTest::gtest_main)
+target_link_libraries(block_test GTest::gtest_main TBB::tbb -lpthread)
+target_compile_options(block_test PRIVATE -Wno-deprecated-declarations -Wno-ignored-attributes -std=c++20)
 
 add_executable(grblock_test src/grblock_test.cpp)
-target_link_libraries(grblock_test GTest::gtest_main)
+target_link_libraries(grblock_test GTest::gtest_main TBB::tbb -lpthread)
+target_compile_options(grblock_test PRIVATE -Wno-deprecated-declarations -Wno-ignored-attributes -std=c++20)
 
 
 include(GoogleTest)
@@ -38,5 +42,5 @@ gtest_discover_tests(block_test grblock_test)
 add_executable(gravitate src/main.cpp)
 # disable the deprecated sprintf warnings in boost::lexical_cast
 #TODO: figure out how to eliminate this warning without disabling
-target_compile_options(gravitate PRIVATE -Wno-deprecated-declarations)
-target_link_libraries(gravitate ${Boost_LIBRARIES} ${OpenCL_LIBRARIES})
+target_compile_options(gravitate PRIVATE -Wno-deprecated-declarations -Wno-ignored-attributes -std=c++20)
+target_link_libraries(gravitate ${Boost_LIBRARIES} ${OpenCL_LIBRARIES} TBB::tbb -lpthread)

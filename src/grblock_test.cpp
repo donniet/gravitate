@@ -30,11 +30,15 @@ TEST(GRBlockTest, Indexing) {
     ASSERT_EQ((TensorHelper<size_t,4,4>::index(0,2,0,3)),4*4*4*3 + 2*4);
     ASSERT_EQ((TensorHelper<size_t,4,4>::index(0,1,0,4)),4*4*4*4 + 1*4);
 
+    ASSERT_EQ((TensorHelper<size_t,4,4>::index(std::make_tuple(0,4,0,1))), 4*4*4*1 + 4*4);
+
+
     #if 0
     // this should be a compiler error because there are 5 parameters!
     ASSERT_EQ((TensorHelper<size_t,4,4>::index(0,0,0,0,0)),0);
     #endif
 }
+
 
 TEST(GRBlockTest, Indexing2) {
     {
@@ -49,6 +53,75 @@ TEST(GRBlockTest, Indexing2) {
         auto coords = TensorHelper<size_t,4,4>::dimension(4*4*4*3 + 4*2);
         ASSERT_EQ(coords, (tuple<size_t,size_t,size_t,size_t>(0,2,0,3)));
     }
+}
+
+TEST(GRBlockTest, Tuples) {
+    tuple<int, int, int> a(0,1,3);
+    auto head = tuple_head<2>(a);
+
+    ASSERT_EQ(get<0>(head), 0);
+    ASSERT_EQ(get<1>(head), 1);
+
+    auto tail = tuple_tail<2>(a);
+    ASSERT_EQ(get<0>(tail), 3);
+
+    auto full = tuple_splice<2>(a, 2);
+    ASSERT_EQ(get<0>(full), 0);
+    ASSERT_EQ(get<1>(full), 1);
+    ASSERT_EQ(get<2>(full), 2);
+    ASSERT_EQ(get<3>(full), 3);
+}
+
+TEST(GRBlockTest, Indexing3) {
+    typedef Tensor<float, 4, Covariant, Contravariant, Covariant, Covariant> t0100;
+    t0100 t;
+    ASSERT_EQ(t.size(), 4*4*4*4);
+
+    typedef typename ContractionHelper<float, 4, 0, 1, Covariant, Contravariant, Covariant, Covariant>::type contracted_type;
+    contracted_type c;
+
+    ASSERT_EQ(c.size(), 4*4);
+
+    std::array<size_t,t0100::siz()> indices;
+
+    // parallel iota
+    auto beg = indices.begin();
+    std::for_each(std::execution::par_unseq, beg, beg + t0100::siz(), [&beg](auto & element) {
+        element = &element - beg;
+    });
+
+    // determine the contraction distance in the original tensor
+    size_t stride = Contraction<t0100,0,1>::stride();
+
+    std::cout << "stride: " << stride << std::endl;
+    std::cout << "power: " << ContractionHelper<float, 4, 0, 1, Covariant, Contravariant, Contravariant>::stride() << std::endl;
+
+    std::transform(std::execution::par_unseq, c.begin(), c.end(), c.begin(), [&c, &t](auto & element) {
+        // first get the index
+        auto index = &element - c.begin();
+
+        // transform the index into tensor indices
+        auto dims = c.dimension(index);
+
+        // get the tensor index of the uncontracted tensor
+        // t0100::helper_type::index_type uncontracted;
+        // uncontract<0,1>(uncontracted, dims);
+
+        // get the index in the uncontracted
+        // t.index(uncontracted);
+        
+
+        return element;
+    });
+
+    size_t dex = 0;
+    for(auto & i : indices) {
+        std::cout << i << " ";
+        ASSERT_EQ(i, dex++);
+    }
+    std::cout << std::endl;
+
+    ASSERT_TRUE(true);
 }
 
 TEST(GRBlockTest, Types) {

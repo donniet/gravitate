@@ -70,6 +70,8 @@ TEST(GRBlockTest, Tuples) {
     ASSERT_EQ(get<1>(full), 1);
     ASSERT_EQ(get<2>(full), 2);
     ASSERT_EQ(get<3>(full), 3);
+
+    auto full2 = tuple_splice<0>(a, tuple_splice<2>(a, 2));
 }
 
 TEST(GRBlockTest, Indexing3) {
@@ -93,6 +95,12 @@ TEST(GRBlockTest, Indexing3) {
     // determine the contraction distance in the original tensor
     size_t stride = Contraction<t0100,0,1>::stride();
 
+    auto un = Contraction<t0100,0,1>::uncontract_indices(make_tuple<size_t,size_t>(3,2));
+    ASSERT_EQ(get<0>(un), 0);
+    ASSERT_EQ(get<1>(un), 0);
+    ASSERT_EQ(get<2>(un), 3);
+    ASSERT_EQ(get<3>(un), 2);
+
     std::cout << "stride: " << stride << std::endl;
     std::cout << "power: " << ContractionHelper<float, 4, 0, 1, Covariant, Contravariant, Contravariant>::stride() << std::endl;
 
@@ -109,7 +117,7 @@ TEST(GRBlockTest, Indexing3) {
 
         // get the index in the uncontracted
         // t.index(uncontracted);
-        
+        // auto undims = tuple_splice(dims)
 
         return element;
     });

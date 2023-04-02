@@ -240,7 +240,7 @@ public:
     typedef Tensor<T,N,Variances...> this_type;
     typedef std::array<T,TensorSize<N,Variances...>::value> data_type;
     typedef TensorHelper<T,N,sizeof...(Variances)> helper_type;
-    using index_type = TensorHelper<T,N,sizeof...(Variances)>::index_type;
+    // using index_type = TensorHelper<T,N,sizeof...(Variances)>::index_type;
 
     constexpr static size_t dimensions = N;
     constexpr static size_t degree = sizeof...(Variances);
@@ -416,6 +416,7 @@ struct TensorHelper<T,N,1> {
     static dimension_type dimension(size_t index) {
         return {(T)index};
     }
+    typedef decltype(dimension(0)) index_type;
 };
 template<typename T, size_t N, size_t M>
 struct TensorHelper {
@@ -428,15 +429,14 @@ struct TensorHelper {
     template<typename ... Sizes>
     static size_t index_helper(size_t i, tuple<Sizes...> sizes);
 
-    static auto dimension(size_t index) ->
-        decltype(tuple_cat(make_tuple<T>(index%N),TensorHelper<T,N,M-1>::dimension(index/N)))    
+    static auto dimension(size_t index)   
     {
         return tuple_cat(make_tuple<T>(index % N), 
             TensorHelper<T,N,M-1>::dimension(index / N)
         );
     }
 
-    using index_type = decltype(dimension(0));
+    typedef decltype(dimension(0)) index_type;
 };
 
 
@@ -508,7 +508,9 @@ template<typename T, size_t N, size_t i, size_t j, typename ... Variances>
 struct ContractionHelper {
     using type = typename variances_to_tensor<T,N,typename contraction_type<i,j,Variances...>::type>::type;
 
-
+    static auto uncontract_indices(type::helper_type::index_type const & contracted) {
+        return tuple_splice<(i<j?j:i)>(tuple_splice<(i<j?i:j)>(contracted, (T)0), (T)0);
+    }
 
     // stride of this contraction in the original tensor
     constexpr static size_t stride() {

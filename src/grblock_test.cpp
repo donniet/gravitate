@@ -84,7 +84,9 @@ TEST(GLBlockTest, Contract) {
 
     t01 t({ 1,2, 3,4 });
 
-    auto c = t.contract<0,1>();
+    auto c = t.contract<1,0>();
+    ASSERT_EQ(c(0), 5);
+    c = t.contract<0,1>();
     ASSERT_EQ(c(0), 5);
 
     t10 u({2,3,4,63}); 

@@ -15,6 +15,16 @@ using std::make_tuple;
 struct Covariant {};
 struct Contravariant {};
 
+
+template<size_t x, size_t n>
+struct power {
+    constexpr static size_t value = x * power<x,n-1>::value;
+};
+template<size_t x>
+struct power<x,0> {
+    constexpr static size_t value = 1;
+};
+
 template < typename T , typename... Ts >
 auto head( std::tuple<T,Ts...> t )
 {
@@ -238,16 +248,20 @@ template<typename T, size_t N, typename ... Variances>
 class Tensor {
 public:
     typedef Tensor<T,N,Variances...> this_type;
+    typedef T element_type;
     typedef std::array<T,TensorSize<N,Variances...>::value> data_type;
     typedef TensorHelper<T,N,sizeof...(Variances)> helper_type;
+    typedef data_type::iterator iterator;
+    typedef data_type::const_iterator const_iterator;
     // using index_type = TensorHelper<T,N,sizeof...(Variances)>::index_type;
 
     constexpr static size_t dimensions = N;
     constexpr static size_t degree = sizeof...(Variances);
-    constexpr static size_t siz() { return TensorSize<N,Variances...>::value; }
+    constexpr static size_t size() { return TensorSize<N,Variances...>::value; }
 
     Tensor();
-    Tensor(std::array<T,N*sizeof...(Variances)> const & data);
+    Tensor(data_type const & data);
+    Tensor(data_type && data);
     Tensor(Tensor const &);
     Tensor(Tensor &&);
     this_type & operator=(this_type const &);
@@ -257,7 +271,7 @@ public:
     template<typename ... Sizes>
     size_t index(Sizes ... sizes) const { return helper_type::index(sizes...); }
     // size_t index()
-    auto dimension(size_t index) const -> decltype(helper_type::dimension(index)) { return helper_type::dimension(index); }
+    auto dimension(size_t index) const { return helper_type::dimension(index); }
     
 
     this_type & operator+=(this_type const &);
@@ -269,14 +283,24 @@ public:
     this_type operator*(T) const;
     this_type operator/(T) const;
 
-    template<typename ... Sizes>
-    T & get(Sizes ... sizes) { return data_.get(helper_type::index(sizes...)); }
+    T & at(size_t index) { return data_[index]; }
+    T const & at(size_t index) const { return data_[index]; }
 
     template<typename ... Sizes>
-    T const & get(Sizes ... sizes) const { return data_.get(helper_type::index(sizes...)); }
+    T & get(Sizes ... sizes) { return data_.at(helper_type::index(sizes...)); }
+
+    template<typename ... Sizes>
+    T const & get(Sizes ... sizes) const { return data_.at(helper_type::index(sizes...)); }
+
+    template<typename ... Sizes>
+    T & operator()(Sizes ... sizes) { return data_.at(helper_type::index(sizes...)); }
+    template<typename ... Sizes>
+    T const & operator()(Sizes ... sizes) const { return data_.at(helper_type::index(sizes...)); }
 
     template<size_t i, size_t j>
-    contraction_type<i,j,Variances...>::type contract() const; 
+    auto contract() const {
+        return ContractionHelper<T, N, i, j, Variances...>::contract(*this);
+    }
 
     // template<size_t i, size_t j>
     // auto contract() const -> ContractionHelper<T, N, i, j, Variances...>::result_type;
@@ -299,7 +323,8 @@ public:
     typename data_type::const_iterator begin() const { return data_.begin(); }
     typename data_type::iterator end() { return data_.end(); }
     typename data_type::const_iterator end() const { return data_.end(); }
-    auto size() const -> decltype(data_.size()) { return data_.size(); }
+
+    void print(std::ostream & os) const;
 };
 
 // template<typename T, size_t N, size_t i, size_t j, typename ... Variances>
@@ -319,6 +344,12 @@ Tensor<T,N,Variances...>::Tensor(Tensor<T,N,Variances...> const & other) {
 
 template<typename T, size_t N, typename ... Variances>
 Tensor<T,N,Variances...>::Tensor(Tensor<T,N,Variances...> && other) : data_(std::move(other.data_)) {}
+
+template<typename T, size_t N, typename ... Variances>
+Tensor<T,N,Variances...>::Tensor(data_type const & data) : data_(data) {}
+
+template<typename T, size_t N, typename ... Variances>
+Tensor<T,N,Variances...>::Tensor(data_type && data) : data_(std::move(data)) {}
 
 template<typename T, size_t N, typename ... Variances>
 Tensor<T,N,Variances...> & Tensor<T,N,Variances...>::operator=(Tensor<T,N,Variances...> const & other) {
@@ -400,12 +431,62 @@ Tensor<T,N,Variances...> Tensor<T,N,Variances...>::operator/(T scalar) const {
     return result;
 }
 
+template<typename T, size_t N, typename RandomAccessIterator, typename ... Variances>
+struct PrintHelper;
+
+//TODO: I believe this prints in the wrong major order, 
+// but it does print all elements in the proper structure, 
+// so we will leave it be for now.
+template<typename T, size_t N, typename RandomAccessIterator, typename ... Variances>
+struct PrintHelper<T,N,RandomAccessIterator,Covariant,Variances...> {
+    static void print(std::ostream & os, RandomAccessIterator i) {
+        os << "[";
+        if(sizeof...(Variances) == 0) {
+            os << " ";
+        }
+        for(int j = 0; j < N; ++j) {
+            PrintHelper<T,N,RandomAccessIterator,Variances...>::print(os, i + j * power<N,sizeof...(Variances)>::value);
+        }
+        os << "] ";
+    }
+};
+template<typename T, size_t N, typename RandomAccessIterator, typename ... Variances>
+struct PrintHelper<T,N,RandomAccessIterator,Contravariant,Variances...> {
+    static void print(std::ostream & os, RandomAccessIterator i) {
+        os << "{";
+        if(sizeof...(Variances) == 0) {
+            os << " ";
+        }
+        for(int j = 0; j < N; ++j) {
+            PrintHelper<T,N,RandomAccessIterator,Variances...>::print(os, i + j * power<N,sizeof...(Variances)>::value);
+        }
+        os << "} ";
+    }
+};
+
+template<typename T, size_t N, typename RandomAccessIterator>
+struct PrintHelper<T,N,RandomAccessIterator> {
+    static void print(std::ostream & os, RandomAccessIterator i) {
+        os << *i << " ";
+    }
+};
+
+template<typename T, size_t N, typename ... Variances>
+void Tensor<T,N,Variances...>::print(std::ostream & os) const {
+    PrintHelper<T,N,typename Tensor<T,N,Variances...>::const_iterator,Variances...>::print(os, data_.begin());
+}
+// template<typename T, size_t N, typename RandomAccessIterator, typename Variance, typename ... Variances>
+// void PrintHelper<T,N,RandomAccessIterator,Variance,Variances...>::print_rows<0>(std::ostream & os, RandomAccessIterator i) {}
+
 template<typename T, size_t N, typename ... Variances>
 Tensor<T,N,Variances...>::~Tensor() {}
 
 template<typename T, size_t N>
 struct TensorHelper<T,N,0> {
-    static size_t index() { return 0; }
+    typedef tuple<> dimension_type;
+    static size_t index(size_t i) { return i; }
+    static dimension_type dimension(size_t index) { return tuple<>{}; }
+    typedef decltype(dimension(0)) index_type;
 };
 template<typename T, size_t N>
 struct TensorHelper<T,N,1> {
@@ -459,14 +540,6 @@ struct variances_to_tensor<T,N,variance_container<Variances...>> {
     typedef Tensor<T,N,Variances...> type;
 };
 
-template<size_t x, size_t n>
-struct power {
-    constexpr static size_t value = x * power<x,n-1>::value;
-};
-template<size_t x>
-struct power<x,0> {
-    constexpr static size_t value = 1;
-};
 
 template<typename Tuple, size_t ... Is>
 auto tuple_head_impl(Tuple const & t, std::index_sequence<Is...>) {
@@ -518,19 +591,36 @@ struct ContractionHelper {
         return power<N,i>::value + power<N,j>::value;
     }
 
-    static type contract(Tensor<T,N,Variances...> const & dat) 
+    static type contract(Tensor<T,N,Variances...> const & t) 
     {
-        type ret;
-        std::array<size_t,type::siz()> indices;
+        type c;
+        
+        std::transform(std::execution::par_unseq, c.begin(), c.end(), c.begin(), [&](auto & element) {
+            // first get the index
+            auto index = &element - c.begin();
 
-        // parallel iota
-        auto beg = indices.begin();
-        std::for_each(std::execution::par_unseq, beg, beg + type::siz(), [&beg](T & element) {
-            return &element - beg;
+            // transform the index into tensor indices
+            auto dims = c.dimension(index);
+
+            // get the tensor index of the uncontracted tensor
+            // t0100::helper_type::index_type uncontracted;
+            // uncontract<0,1>(uncontracted, dims);
+            auto un = uncontract_indices(dims);
+
+            // get the index in the uncontracted
+            // t.index(uncontracted);
+            // auto undims = tuple_splice(dims)
+            auto tdex = t.index(un);
+
+            T dat = 0;
+            for(size_t k = 0; k < N; ++k) {
+                dat += t.at(tdex + k * stride());
+            }
+
+            return dat;
         });
 
-        // create a mapping to get T_{ab..x...x...yz} where x is at the i and jth indices
-        return ret;
+        return c;
     }
 
 };

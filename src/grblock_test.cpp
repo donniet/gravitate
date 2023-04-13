@@ -74,62 +74,36 @@ TEST(GRBlockTest, Tuples) {
     auto full2 = tuple_splice<0>(a, tuple_splice<2>(a, 2));
 }
 
-TEST(GRBlockTest, Indexing3) {
-    typedef Tensor<float, 4, Covariant, Contravariant, Covariant, Covariant> t0100;
-    t0100 t;
-    ASSERT_EQ(t.size(), 4*4*4*4);
+TEST(GLBlockTest, Contract) {
+    typedef Tensor<float, 2, Covariant, Contravariant> t01;
+    typedef Tensor<float, 2, Contravariant, Covariant> t10;
+    typedef Tensor<float, 4, Covariant, Contravariant> T01;
+    typedef Tensor<float, 4, Contravariant, Covariant> T10;
 
-    typedef typename ContractionHelper<float, 4, 0, 1, Covariant, Contravariant, Covariant, Covariant>::type contracted_type;
-    contracted_type c;
+    std::cout << "size: " << TensorSize<2, Covariant, Contravariant>::value << std::endl;
 
-    ASSERT_EQ(c.size(), 4*4);
+    t01 t({ 1,2, 3,4 });
 
-    std::array<size_t,t0100::siz()> indices;
+    auto c = t.contract<0,1>();
+    ASSERT_EQ(c(0), 5);
 
-    // parallel iota
-    auto beg = indices.begin();
-    std::for_each(std::execution::par_unseq, beg, beg + t0100::siz(), [&beg](auto & element) {
-        element = &element - beg;
-    });
+    t10 u({2,3,4,63}); 
+    auto d = u.contract<0,1>();
+    ASSERT_EQ(d(0), 65);
 
-    // determine the contraction distance in the original tensor
-    size_t stride = Contraction<t0100,0,1>::stride();
+    //      _          _            __              __
+    T01 T({ 1,2,3,4, 5,6,7,8,  9,10,11,12, 13,14,15,16 });
+    //      _          _            __              __
+    T10 U({ 2,3,4,5, 6,7,8,9, 10,11,12,13, 14,15,16,63 });
 
-    auto un = Contraction<t0100,0,1>::uncontract_indices(make_tuple<size_t,size_t>(3,2));
-    ASSERT_EQ(get<0>(un), 0);
-    ASSERT_EQ(get<1>(un), 0);
-    ASSERT_EQ(get<2>(un), 3);
-    ASSERT_EQ(get<3>(un), 2);
+    auto e = T.contract<0,1>();
+    auto f = U.contract<0,1>();
 
-    std::cout << "stride: " << stride << std::endl;
-    std::cout << "power: " << ContractionHelper<float, 4, 0, 1, Covariant, Contravariant, Contravariant>::stride() << std::endl;
+    ASSERT_EQ(T.size(), 16);
+    ASSERT_EQ(U.size(), 16);
 
-    std::transform(std::execution::par_unseq, c.begin(), c.end(), c.begin(), [&c, &t](auto & element) {
-        // first get the index
-        auto index = &element - c.begin();
-
-        // transform the index into tensor indices
-        auto dims = c.dimension(index);
-
-        // get the tensor index of the uncontracted tensor
-        // t0100::helper_type::index_type uncontracted;
-        // uncontract<0,1>(uncontracted, dims);
-
-        // get the index in the uncontracted
-        // t.index(uncontracted);
-        // auto undims = tuple_splice(dims)
-
-        return element;
-    });
-
-    size_t dex = 0;
-    for(auto & i : indices) {
-        std::cout << i << " ";
-        ASSERT_EQ(i, dex++);
-    }
-    std::cout << std::endl;
-
-    ASSERT_TRUE(true);
+    ASSERT_EQ(e(0), 1+6+11+16);
+    ASSERT_EQ(f(0), 2+7+12+63);
 }
 
 TEST(GRBlockTest, Types) {

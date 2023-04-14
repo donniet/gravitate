@@ -12,8 +12,21 @@
 TEST(TensorTest, Mult) {
     Tensor<float,2,Covariant>     a({1,2});
     Tensor<float,2,Contravariant> b({3,5});
+    Tensor<float,2,Covariant,Contravariant> r({3,6,5,10});
 
     auto res = a * b;
+
+    a.print(std::cout);
+    std::cout << std::endl;
+    b.print(std::cout);
+    std::cout << std::endl;
+    r.print(std::cout);
+    std::cout << std::endl;
+
+    res.print(std::cout);
+    std::cout << std::endl;
+
+    ASSERT_EQ(r, res);
 }
 
 TEST(TensorTest, Indexing) {

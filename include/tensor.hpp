@@ -76,6 +76,9 @@ public:
     static auto dimension(size_t index) { return helper_type::dimension(index); }
     
 
+    bool operator==(this_type const &) const;
+    bool operator!=(this_type const & other) const { return !(*this == other); }
+
     this_type & operator+=(this_type const &);
     this_type & operator-=(this_type const &);
     this_type & operator*=(T);
@@ -182,6 +185,11 @@ template<typename T, size_t N, typename ... Variances>
 Tensor<T,N,Variances...> & Tensor<T,N,Variances...>::operator=(Tensor<T,N,Variances...> && other) {
     data_ = std::move(other.data_);
     return *this;
+}
+
+template<typename T, size_t N, typename ... Variances>
+bool Tensor<T,N,Variances...>::operator==(Tensor<T,N,Variances...> const & other) const {
+    return std::equal(std::execution::par_unseq, data_.begin(), data_.end(), other.data_.begin());
 }
 
 template<typename T, size_t N, typename ... Variances>

@@ -258,6 +258,16 @@ struct PrintHelper<T,N,RandomAccessIterator> {
 };
 
 
+template<size_t M>
+struct index_type_from_size {
+    typedef decltype(tuple_cat(tuple<size_t>(), typename index_type_from_size<M-1>::type())) type;
+};
+template<>
+struct index_type_from_size<0> {
+    typedef tuple<> type;
+};
+
+
 template<typename T, size_t N>
 struct TensorHelper<T,N,0> {
     typedef tuple<> dimension_type;
@@ -281,6 +291,9 @@ struct TensorHelper {
     template<typename ... Sizes>
     static size_t index(size_t i, Sizes ... sizes) {
         return i + N * TensorHelper<T,N,M-1>::index(sizes...);
+    }
+    static size_t index(index_type_from_size<M>::type i) {
+        return get<0>(i) + N * TensorHelper<T,N,M-1>::index(tuple_tail<0>(i));
     }
     template<typename ... Sizes>
     static size_t index(tuple<Sizes...> sizes);

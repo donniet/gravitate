@@ -34,6 +34,10 @@ add_executable(grblock_test src/grblock_test.cpp)
 target_link_libraries(grblock_test GTest::gtest_main TBB::tbb -lpthread)
 target_compile_options(grblock_test PRIVATE -Wno-deprecated-declarations -Wno-ignored-attributes -std=c++20)
 
+add_executable(tensor_test src/tensor_test.cpp)
+target_link_libraries(tensor_test GTest::gtest_main TBB::tbb -lpthread)
+target_compile_options(tensor_test PRIVATE -Wno-deprecated-declarations -Wno-ignored-attributes -std=c++20)
+
 
 include(GoogleTest)
 gtest_discover_tests(block_test grblock_test)

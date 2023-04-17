@@ -271,7 +271,7 @@ struct index_type_from_size<0> {
 template<typename T, size_t N>
 struct TensorHelper<T,N,0> {
     typedef tuple<> dimension_type;
-    static size_t index(size_t i) { return i; }
+    static size_t index(tuple<> i) { return 0; }
     static dimension_type dimension(size_t index) { return tuple<>{}; }
     typedef decltype(dimension(0)) index_type;
 };
@@ -279,7 +279,6 @@ template<typename T, size_t N>
 struct TensorHelper<T,N,1> {
     typedef tuple<T> dimension_type;
 
-    static size_t index(size_t i) { return i; }
     static size_t index(tuple<size_t> ti) { return get<0>(ti); }
     static dimension_type dimension(size_t index) {
         return {(T)index};
@@ -288,17 +287,13 @@ struct TensorHelper<T,N,1> {
 };
 template<typename T, size_t N, size_t M>
 struct TensorHelper {
-    template<typename ... Sizes>
-    static size_t index(size_t i, Sizes ... sizes) {
-        return i + N * TensorHelper<T,N,M-1>::index(sizes...);
-    }
     static size_t index(index_type_from_size<M>::type i) {
-        return get<0>(i) + N * TensorHelper<T,N,M-1>::index(tuple_tail<0>(i));
+        static_assert(std::tuple_size<typename index_type_from_size<M>::type>::value == M, "index_type_from_size<M>::type must be M");
+        // static_assert(tuple_size<)
+        auto tail = tuple_tail<1>(i);
+        static_assert(std::tuple_size<typeof(tail)>::value == M-1, "tuple_tail<0> must be M-1");
+        return get<0>(i) + N * TensorHelper<T,N,M-1>::index(tuple_tail<1>(i));
     }
-    template<typename ... Sizes>
-    static size_t index(tuple<Sizes...> sizes);
-    template<typename ... Sizes>
-    static size_t index_helper(size_t i, tuple<Sizes...> sizes);
 
     static auto dimension(size_t index)   
     {
@@ -311,16 +306,16 @@ struct TensorHelper {
 };
 
 
-template<typename T, size_t N, size_t M>
-template<typename ... Sizes>
-size_t TensorHelper<T,N,M>::index(tuple<Sizes...> sizes) {
-    return index(head(sizes), tail(sizes));
-}
-template<typename T, size_t N, size_t M>
-template<typename ... Sizes>
-size_t TensorHelper<T,N,M>::index_helper(size_t i, tuple<Sizes...> sizes) {
-    return i + N * TensorHelper<T,N,M-1>::index(sizes);
-}
+// template<typename T, size_t N, size_t M>
+// template<typename ... Sizes>
+// size_t TensorHelper<T,N,M>::index(tuple<Sizes...> sizes) {
+//     return index(head(sizes), tail(sizes));
+// }
+// template<typename T, size_t N, size_t M>
+// template<typename ... Sizes>
+// size_t TensorHelper<T,N,M>::index_helper(size_t i, tuple<Sizes...> sizes) {
+//     return i + N * TensorHelper<T,N,M-1>::index(sizes);
+// }
 
 
 

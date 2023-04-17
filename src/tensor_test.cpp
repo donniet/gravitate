@@ -10,9 +10,9 @@
 #include <gtest/gtest.h>
 
 TEST(TensorTest, Mult) {
-    Tensor<float,2,Covariant>     a({1,2});
-    Tensor<float,2,Contravariant> b({3,5});
-    Tensor<float,2,Covariant,Contravariant> r({3,6,5,10});
+    Tensor<float,2,Covariant>     a({2,3});
+    Tensor<float,2,Contravariant> b({5,7});
+    Tensor<float,2,Covariant,Contravariant> r({10,15,14,21});
 
     auto res = a * b;
 
@@ -27,35 +27,40 @@ TEST(TensorTest, Mult) {
     std::cout << std::endl;
 
     ASSERT_EQ(r, res);
+
+    ASSERT_EQ(a({0}) * b({0}), res({0,0}));
+    ASSERT_EQ(a({0}) * b({1}), res({0,1}));
+    ASSERT_EQ(a({1}) * b({0}), res({1,0}));
+    ASSERT_EQ(a({1}) * b({1}), res({1,1}));
 }
 
 TEST(TensorTest, Indexing) {
-    ASSERT_EQ((TensorHelper<size_t,4,4>::index(0,0,0,0)),0);
-    ASSERT_EQ((TensorHelper<size_t,4,4>::index(1,0,0,0)),1);
-    ASSERT_EQ((TensorHelper<size_t,4,4>::index(2,0,0,0)),2);
-    ASSERT_EQ((TensorHelper<size_t,4,4>::index(3,0,0,0)),3);
+    ASSERT_EQ((TensorHelper<size_t,4,4>::index({0,0,0,0})),0);
+    ASSERT_EQ((TensorHelper<size_t,4,4>::index({1,0,0,0})),1);
+    ASSERT_EQ((TensorHelper<size_t,4,4>::index({2,0,0,0})),2);
+    ASSERT_EQ((TensorHelper<size_t,4,4>::index({3,0,0,0})),3);
 
-    ASSERT_EQ((TensorHelper<size_t,4,4>::index(0,1,0,0)),4);
-    ASSERT_EQ((TensorHelper<size_t,4,4>::index(1,1,0,0)),5);
-    ASSERT_EQ((TensorHelper<size_t,4,4>::index(2,1,0,0)),6);
-    ASSERT_EQ((TensorHelper<size_t,4,4>::index(3,1,0,0)),7);
+    ASSERT_EQ((TensorHelper<size_t,4,4>::index({0,1,0,0})),4);
+    ASSERT_EQ((TensorHelper<size_t,4,4>::index({1,1,0,0})),5);
+    ASSERT_EQ((TensorHelper<size_t,4,4>::index({2,1,0,0})),6);
+    ASSERT_EQ((TensorHelper<size_t,4,4>::index({3,1,0,0})),7);
 
-    ASSERT_EQ((TensorHelper<size_t,4,4>::index(1,2,0,0)),9);
-    ASSERT_EQ((TensorHelper<size_t,4,4>::index(1,3,0,0)),13);
-    ASSERT_EQ((TensorHelper<size_t,4,4>::index(1,4,0,0)),17);
+    ASSERT_EQ((TensorHelper<size_t,4,4>::index({1,2,0,0})),9);
+    ASSERT_EQ((TensorHelper<size_t,4,4>::index({1,3,0,0})),13);
+    ASSERT_EQ((TensorHelper<size_t,4,4>::index({1,4,0,0})),17);
 
 
-    ASSERT_EQ((TensorHelper<size_t,4,4>::index(0,4,0,1)),4*4*4*1 + 4*4);
-    ASSERT_EQ((TensorHelper<size_t,4,4>::index(0,3,0,2)),4*4*4*2 + 3*4);
-    ASSERT_EQ((TensorHelper<size_t,4,4>::index(0,2,0,3)),4*4*4*3 + 2*4);
-    ASSERT_EQ((TensorHelper<size_t,4,4>::index(0,1,0,4)),4*4*4*4 + 1*4);
+    ASSERT_EQ((TensorHelper<size_t,4,4>::index({0,4,0,1})),4*4*4*1 + 4*4);
+    ASSERT_EQ((TensorHelper<size_t,4,4>::index({0,3,0,2})),4*4*4*2 + 3*4);
+    ASSERT_EQ((TensorHelper<size_t,4,4>::index({0,2,0,3})),4*4*4*3 + 2*4);
+    ASSERT_EQ((TensorHelper<size_t,4,4>::index({0,1,0,4})),4*4*4*4 + 1*4);
 
     ASSERT_EQ((TensorHelper<size_t,4,4>::index(std::make_tuple(0,4,0,1))), 4*4*4*1 + 4*4);
 
 
     #if 0
     // this should be a compiler error because there are 5 parameters!
-    ASSERT_EQ((TensorHelper<size_t,4,4>::index(0,0,0,0,0)),0);
+    ASSERT_EQ((TensorHelper<size_t,4,4>::index({0,0,0,0,0})),0);
     #endif
 }
 
@@ -78,18 +83,23 @@ TEST(TensorTest, Indexing2) {
 TEST(TensorTest, Tuples) {
     tuple<int, int, int> a(0,1,3);
     auto head = tuple_head<2>(a);
-
+    static_assert(std::tuple_size<decltype(head)>::value == 2);
     ASSERT_EQ(get<0>(head), 0);
     ASSERT_EQ(get<1>(head), 1);
 
     auto tail = tuple_tail<2>(a);
+    static_assert(std::tuple_size<decltype(tail)>::value == 1);
     ASSERT_EQ(get<0>(tail), 3);
 
     auto full = tuple_splice<2>(a, 2);
+    static_assert(std::tuple_size<decltype(full)>::value == 4);
     ASSERT_EQ(get<0>(full), 0);
     ASSERT_EQ(get<1>(full), 1);
     ASSERT_EQ(get<2>(full), 2);
     ASSERT_EQ(get<3>(full), 3);
+
+    auto full_tail = tuple_tail<1>(full);
+    static_assert(std::tuple_size<decltype(full_tail)>::value == 3);
 
     auto full2 = tuple_splice<0>(a, tuple_splice<2>(a, 2));
 }
@@ -105,13 +115,13 @@ TEST(GLBlockTest, Contract) {
     t01 t({ 1,2, 3,4 });
 
     auto c = t.contract<1,0>();
-    ASSERT_EQ(c(0), 5);
+    ASSERT_EQ(c({}), 5);
     c = t.contract<0,1>();
-    ASSERT_EQ(c(0), 5);
+    ASSERT_EQ(c({}), 5);
 
     t10 u({2,3,4,63}); 
     auto d = u.contract<0,1>();
-    ASSERT_EQ(d(0), 65);
+    ASSERT_EQ(d({}), 65);
 
     //      _          _            __              __
     T01 T({ 1,2,3,4, 5,6,7,8,  9,10,11,12, 13,14,15,16 });
@@ -124,8 +134,8 @@ TEST(GLBlockTest, Contract) {
     ASSERT_EQ(T.size(), 16);
     ASSERT_EQ(U.size(), 16);
 
-    ASSERT_EQ(e(0), 1+6+11+16);
-    ASSERT_EQ(f(0), 2+7+12+63);
+    ASSERT_EQ(e({}), 1+6+11+16);
+    ASSERT_EQ(f({}), 2+7+12+63);
 }
 
 TEST(TensorTest, Types) {

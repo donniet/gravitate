@@ -243,7 +243,6 @@ Tensor<T,N,Variances...>::multiplyAndContract(Tensor<T,N,SecondVariances...> con
         for(size_t k = 0; k < N; ++k, dex += stride<i,j>()) {
             // turn the offset into tensor indices of the product
             auto dims = product_type::dimension(dex);
-            std::cerr << "dims: " << dims << std::endl;
 
             // split the dimensions into the first and second indices
             auto ac = tuple_head<sizeof...(Variances)>(dims);

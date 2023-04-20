@@ -1,6 +1,5 @@
 #pragma once
 
-
 #include "tuple_splice.hpp"
 #include "detail/tensor_detail.hpp"
 
@@ -19,19 +18,14 @@ using std::make_tuple;
 struct Covariant {};
 struct Contravariant {};
 
-template<typename ... Variances>
-struct index_type;
-
-
-template<> struct index_type<> { typedef tuple<> type; };
-
-template<typename Variance> struct index_type<Variance> {
-    typedef tuple<size_t> type;
+template<typename T, typename R>
+struct replace_type {
+    typedef R type;
 };
 
-template<typename Variance, typename ... Variances>
-struct index_type<Variance, Variances...> {
-    typedef decltype(tuple_cat(tuple<size_t>(), typename index_type<Variances...>::type())) type;
+template<typename ... Variances>
+struct index_type {
+    typedef tuple<typename replace_type<Variances, size_t>::type...> type;
 };
 
 template<typename T, size_t N, typename ... Variances>
@@ -72,10 +66,8 @@ public:
 
     template<typename ... Sizes>
     static size_t index(Sizes ... sizes) { return helper_type::index(sizes...); }
-    // size_t index()
     static auto dimension(size_t index) { return helper_type::dimension(index); }
     
-
     bool operator==(this_type const &) const;
     bool operator!=(this_type const & other) const { return !(*this == other); }
 
@@ -91,16 +83,14 @@ public:
     template<typename ... SecondVariances>
     Tensor<T,N,Variances...,SecondVariances...> operator*(Tensor<T,N,SecondVariances...> const & other) const;
 
+    template<size_t i, size_t j, typename ... SecondVariances>
+    typename variances_to_tensor<T,N,typename contraction_type<i,j,Variances...,SecondVariances...>::type>::type
+    multiplyAndContract(Tensor<T,N,SecondVariances...> const & other) const;
+
     T & operator[](size_t index) { return data_[index]; }
     T const & operator[](size_t index) const { return data_[index]; }
     T & at(size_t index) { return data_.at(index); }
     T const & at(size_t index) const { return data_.at(index); }
-
-    // template<typename ... Sizes>
-    // T & get(Sizes ... sizes) { return data_.at(helper_type::index(sizes...)); }
-
-    // template<typename ... Sizes>
-    // T const & get(Sizes ... sizes) const { return data_.at(helper_type::index(sizes...)); }
 
     T & get(typename index_type<Variances...>::type index) {
         return data_.at(helper_type::index(index));
@@ -112,7 +102,6 @@ public:
     T & operator()(typename index_type<Variances...>::type index) { return get(index); }
     T const & operator()(typename index_type<Variances...>::type index) const { return get(index); }
 
-
     template<size_t i, size_t j>
     auto contract() const;
 
@@ -120,9 +109,11 @@ private:
     data_type data_;
 
     // stride of this contraction in the original tensor
+    // i realize that's confusion
+    //TODO: figure out a better place for this static function, maybe the contraction helper?
+    // although it only depends externally on N...  Maybe we just take it out of this class altogether?
     template<size_t i, size_t j>
     constexpr static size_t stride() {
-        // TensorHelper<T,N,sizeof...(Variances)>
         return power<N,i>::value + power<N,j>::value;
     }
 
@@ -134,105 +125,6 @@ public:
 
     void print(std::ostream & os) const;
 };
-
-// template<typename T, size_t N>
-// class Tensor<T,N> {
-// public:
-//     typedef T element_type;
-//     typedef Tensor<T,N> this_type;
-//     typedef std::array<T,TensorSize<N>::value> data_type;
-//     typedef TensorHelper<T,N,0> helper_type;
-//     typedef data_type::iterator iterator;
-//     typedef data_type::const_iterator const_iterator;
-//     // using index_type = TensorHelper<T,N,sizeof...(Variances)>::index_type;
-
-//     constexpr static size_t dimensions = N;
-//     constexpr static size_t degree = 0;
-//     constexpr static size_t size() { return 1; }
-
-//     Tensor();
-//     Tensor(bool) {}; // don't initialize data_
-//     Tensor(data_type const & data);
-//     Tensor(data_type && data);
-//     Tensor(this_type const & data);
-//     Tensor(this_type && data);
-//     this_type & operator=(this_type const &);
-//     this_type & operator=(this_type &&);
-//     ~Tensor();
-
-//     template<typename ... Sizes>
-//     static size_t index(Sizes ... sizes) { return helper_type::index(sizes...); }
-//     // size_t index()
-//     static auto dimension(size_t index) { return helper_type::dimension(index); }
-    
-
-//     bool operator==(this_type const &) const;
-//     bool operator!=(this_type const & other) const { return !(*this == other); }
-
-//     this_type & operator+=(this_type const &);
-//     this_type & operator-=(this_type const &);
-//     this_type & operator*=(T);
-//     this_type & operator/=(T);
-//     this_type operator+(this_type const &) const;
-//     this_type operator-(this_type const &) const;
-//     this_type operator*(T) const;
-//     this_type operator/(T) const;
-
-//     template<typename ... SecondVariances>
-//     Tensor<T,N,SecondVariances...> operator*(Tensor<T,N,SecondVariances...> const & other) const;
-
-//     T & operator[](size_t index) { return data_[index]; }
-//     T const & operator[](size_t index) const { return data_[index]; }
-//     T & at(size_t index) { return data_.at(index); }
-//     T const & at(size_t index) const { return data_.at(index); }
-
-//     // template<typename ... Sizes>
-//     // T & get(Sizes ... sizes) { return data_.at(helper_type::index(sizes...)); }
-
-//     // template<typename ... Sizes>
-//     // T const & get(Sizes ... sizes) const { return data_.at(helper_type::index(sizes...)); }
-
-//     T & get(tuple<> const &) { return data_.at(0); }
-//     T const & get(tuple<> const &) const { return data_.at(0); }
-    
-
-//     // template<typename ... Sizes>
-//     // T & operator()(Sizes ... sizes) { return data_.at(helper_type::index(sizes...)); }
-//     // template<typename ... Sizes>
-//     // T const & operator()(Sizes ... sizes) const { return data_.at(helper_type::index(sizes...)); }
-
-//     T & operator()() { return get({}); }
-//     T const & operator()() const { return get({}); }
-
-//     operator T() { return get({}); }
-//     operator T() const { return get({}); }
-
-//     template<size_t i, size_t j>
-//     auto contract() const;
-
-// private:
-//     data_type data_;
-
-//     // stride of this contraction in the original tensor
-//     template<size_t i, size_t j>
-//     constexpr static size_t stride() {
-//         // TensorHelper<T,N,sizeof...(Variances)>
-//         return power<N,i>::value + power<N,j>::value;
-//     }
-
-// public:
-//     typename data_type::iterator begin() { return data_.begin(); }
-//     typename data_type::const_iterator begin() const { return data_.begin(); }
-//     typename data_type::iterator end() { return data_.end(); }
-//     typename data_type::const_iterator end() const { return data_.end(); }
-
-//     void print(std::ostream & os) const;
-// };
-
-// template<typename T, size_t N, size_t i, size_t j, typename ... Variances>
-// auto Tensor<T,N,Variances...>::contract() const -> ContractionHelper<Tensor<T,N,Variances...>, i, j>::result_type {
-//     return ContractionHelper<Tensor<T,N,Variances...>, i, j>::contract(*this);
-// }
 
 template<typename T, size_t N, typename ... Variances>
 Tensor<T,N,Variances...>::Tensor() { 
@@ -318,9 +210,58 @@ Tensor<T,N,Variances...> Tensor<T,N,Variances...>::operator-(Tensor<T,N,Variance
     return result;
 }
 
+template<typename Tuple, size_t ... Is>
+void print_tuple(std::ostream & os, Tuple const & t, std::index_sequence<Is...>) {
+    os << "(";
+    ((os << (Is == 0? "" : ", ") << std::get<Is>(t)), ...);
+    os << ")";
+}
+
+template<typename ... Ts>
+std::ostream & operator<<(std::ostream & os, tuple<Ts...> const & t) {
+    print_tuple(os, t, std::make_index_sequence<sizeof...(Ts)>{});
+    return os;
+}
+
+template<typename T, size_t N, typename ... Variances>
+template<size_t i, size_t j, typename ... SecondVariances>
+typename variances_to_tensor<T,N,typename contraction_type<i,j,Variances...,SecondVariances...>::type>::type
+Tensor<T,N,Variances...>::multiplyAndContract(Tensor<T,N,SecondVariances...> const & other) const {
+    typedef Tensor<T,N,Variances...,SecondVariances...> product_type;
+    typedef typename variances_to_tensor<T,N,typename contraction_type<i,j,Variances...,SecondVariances...>::type>::type result_type;
+
+    result_type ret(true); // uninitialized
+
+    auto beg = ret.begin();
+
+    std::transform(std::execution::par_unseq, beg, ret.end(), beg, [&](T const & element) -> T {
+        // get the offset of this element
+        size_t dex = &element - beg;
+
+        T dat = 0;
+
+        for(size_t k = 0; k < N; ++k, dex += stride<i,j>()) {
+            // turn the offset into tensor indices of the product
+            auto dims = product_type::dimension(dex);
+            std::cerr << "dims: " << dims << std::endl;
+
+            // split the dimensions into the first and second indices
+            auto ac = tuple_head<sizeof...(Variances)>(dims);
+            auto bc = tuple_tail<sizeof...(Variances)>(dims);
+
+            // add the product to our result
+            dat += get(ac) * other.get(bc);
+        }
+        return dat;
+    });
+
+    return ret;
+}
+
 template<typename T, size_t N, typename ... Variances>
 template<typename ... SecondVariances>
-Tensor<T,N,Variances...,SecondVariances...> Tensor<T,N,Variances...>::operator*(Tensor<T,N,SecondVariances...> const & other) const {
+Tensor<T,N,Variances...,SecondVariances...> 
+Tensor<T,N,Variances...>::operator*(Tensor<T,N,SecondVariances...> const & other) const {
     typedef Tensor<T,N,Variances...,SecondVariances...> result_type;
 
     result_type ret(true); // uninitialized
@@ -370,8 +311,6 @@ template<typename T, size_t N, typename ... Variances>
 void Tensor<T,N,Variances...>::print(std::ostream & os) const {
     PrintHelper<T,N,typename Tensor<T,N,Variances...>::const_iterator,Variances...>::print(os, data_.begin());
 }
-// template<typename T, size_t N, typename RandomAccessIterator, typename Variance, typename ... Variances>
-// void PrintHelper<T,N,RandomAccessIterator,Variance,Variances...>::print_rows<0>(std::ostream & os, RandomAccessIterator i) {}
 
 template<size_t i, size_t j, typename T, typename ... Ts>
 auto uncontract_indices(tuple<Ts...> const & contracted, T val) {

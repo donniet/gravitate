@@ -12,7 +12,6 @@
 TEST(TensorTest, Mult) {
     Tensor<float,2,Covariant>     a({2,3});
     Tensor<float,2,Contravariant> b({5,7});
-    Tensor<float,2,Covariant,Contravariant> r({10,15,14,21});
 
     auto res = a * b;
 
@@ -20,18 +19,67 @@ TEST(TensorTest, Mult) {
     std::cout << std::endl;
     b.print(std::cout);
     std::cout << std::endl;
-    r.print(std::cout);
+    res.print(std::cout);
     std::cout << std::endl;
 
     res.print(std::cout);
     std::cout << std::endl;
 
-    ASSERT_EQ(r, res);
+    // check all the results are right (see above)
+    ASSERT_EQ(res, (Tensor<float,2,Covariant,Contravariant>({10,15,14,21})));
 
+    // check that our multiplication indexing works
     ASSERT_EQ(a({0}) * b({0}), res({0,0}));
     ASSERT_EQ(a({0}) * b({1}), res({0,1}));
     ASSERT_EQ(a({1}) * b({0}), res({1,0}));
     ASSERT_EQ(a({1}) * b({1}), res({1,1}));
+}
+
+
+TEST(TensorTest, Mult3) {
+    Tensor<float,3,Covariant>     a({2, 3, 5});
+    Tensor<float,3,Contravariant> b({7,11,13});
+
+    auto res = a * b;
+
+    a.print(std::cout);
+    std::cout << std::endl;
+    b.print(std::cout);
+    std::cout << std::endl;
+    res.print(std::cout);
+    std::cout << std::endl;
+
+    res.print(std::cout);
+    std::cout << std::endl;
+
+    // check all the results are right (see above)
+    ASSERT_EQ(res, (Tensor<float,3,Covariant,Contravariant>({
+        14,21,35, 
+        22,33,55, 
+        26,39,65
+    })));
+
+    // check that our multiplication indexing works
+    ASSERT_EQ(a({0}) * b({0}), res({0,0}));
+    ASSERT_EQ(a({0}) * b({1}), res({0,1}));
+    ASSERT_EQ(a({0}) * b({2}), res({0,2}));
+    ASSERT_EQ(a({1}) * b({0}), res({1,0}));
+    ASSERT_EQ(a({1}) * b({1}), res({1,1}));
+    ASSERT_EQ(a({1}) * b({2}), res({1,2}));
+    ASSERT_EQ(a({2}) * b({0}), res({2,0}));
+    ASSERT_EQ(a({2}) * b({1}), res({2,1}));
+    ASSERT_EQ(a({2}) * b({2}), res({2,2}));
+}
+
+TEST(TensorTest, Mult4) {
+    Tensor<float,4,Covariant>     a({2, 3, 5, 7});
+    Tensor<float,4,Contravariant> b({11,13,15,17});
+    Tensor<float,4> r;
+    r[0] = 2 * 11 + 3 * 13 + 5 * 15 + 7 * 17;
+    
+    auto res = a.multiplyAndContract<0,1>(b);
+
+    ASSERT_EQ(res, r);
 }
 
 TEST(TensorTest, Indexing) {

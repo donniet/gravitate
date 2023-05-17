@@ -621,7 +621,7 @@ struct deriv {
     }
 };
 
-struct invert {
+struct invertKernel {
     compute::program prog;
 
     void operator()(
@@ -696,20 +696,13 @@ int main(int ac, char * av[]) {
     compute::generate(metric_map.begin(), metric_map.end(), minikowski, queue);
     cout << "done." << endl;
 
-    invert{prog}(metric_map, inverse_map, success_map, queue);
+    invertKernel{prog}(metric_map, inverse_map, success_map, queue);
     
-
     queue.finish();
 
     for(int i = 0; i < 10; i++) {
         cout << "m: " << metric[i] << ", inv: " << inverse[i] << endl;
     }
-
-
-
-
-    
-
 
     int a;
     cout << "pausing... " << flush;

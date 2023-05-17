@@ -9,6 +9,71 @@
 
 #include <gtest/gtest.h>
 
+
+TEST(TensorTest, Stride) {
+    // ASSERT_EQ(tensor_stride<4,0,1>)
+}
+
+TEST(TensorTest, Tuples) {
+    tuple<int, int, int> a(0,1,3);
+    auto head = tuple_head<2>(a);
+    static_assert(std::tuple_size<decltype(head)>::value == 2);
+    ASSERT_EQ(get<0>(head), 0);
+    ASSERT_EQ(get<1>(head), 1);
+
+    auto tail = tuple_tail<2>(a);
+    static_assert(std::tuple_size<decltype(tail)>::value == 1);
+    ASSERT_EQ(get<0>(tail), 3);
+
+    auto full = tuple_splice<2>(a, 2);
+    static_assert(std::tuple_size<decltype(full)>::value == 4);
+    ASSERT_EQ(get<0>(full), 0);
+    ASSERT_EQ(get<1>(full), 1);
+    ASSERT_EQ(get<2>(full), 2);
+    ASSERT_EQ(get<3>(full), 3);
+
+    auto full_tail = tuple_tail<1>(full);
+    static_assert(std::tuple_size<decltype(full_tail)>::value == 3);
+
+    auto full2 = tuple_splice<0>(a, tuple_splice<2>(a, 2));
+
+    // static_assert(is_permutation<std::index_sequence<1,0>>::value);
+    static_assert(element_exists<0,0>::value);
+    static_assert(element_exists<0,0,1>::value);
+    static_assert(element_exists<0,1,0>::value);
+
+    static_assert(element_exists<1,0,1>::value);
+    static_assert(element_exists<1,1,0>::value);
+    static_assert(!element_exists<2,0,1>::value);
+
+    static_assert(std::is_same_v<
+        remove_sequence_element<3, 0,1,2,3,4 >::type,
+        std::index_sequence<0,1,2,4>
+    >);
+
+    static_assert(std::is_same_v<
+        remove_sequence_element<0, 0,1,2,3,4 >::type,
+        std::index_sequence<1,2,3,4>
+    >);
+
+    static_assert(is_permutation<std::index_sequence<0,1,2>>::value);
+    #if 0 // this fails because 0,1,1 is not a permutation
+    static_assert(is_permutation<std::index_sequence<0,1,1>>::value);   
+    #endif
+
+    permutation<0,1,2> p0;
+    permutation<0,2,1> p1;
+    permutation<1,0,2> p2;
+    permutation<1,2,0> p3;
+    permutation<2,0,1> p4;
+    permutation<2,1,0> p5;
+
+    #if 0 // this fails
+    permutation<0,1,1> ERROR;
+    #endif
+}
+
+
 TEST(TensorTest, Mult) {
     Tensor<float,2,Covariant>     a({2,3});
     Tensor<float,2,Contravariant> b({5,7});
@@ -80,6 +145,17 @@ TEST(TensorTest, Mult4) {
     auto res = a.multiplyAndContract<0,1>(b);
 
     ASSERT_EQ(res, r);
+    ASSERT_EQ(res({}), 2 * 11 + 3 * 13 + 5 * 15 + 7 * 17);
+
+    ASSERT_EQ(res, ((a * b).contract<0,1>()));
+
+    Tensor<float,4> c;
+    c[0] = 2;
+    Tensor<float,4,Contravariant> d({3,5,7,11});
+    auto s = c * d;
+
+    ASSERT_EQ(s, (Tensor<float,4,Contravariant>({6,10,14,22})));
+
 }
 
 TEST(TensorTest, Indexing) {
@@ -106,6 +182,8 @@ TEST(TensorTest, Indexing) {
     ASSERT_EQ((TensorHelper<size_t,4,4>::index(std::make_tuple(0,4,0,1))), 4*4*4*1 + 4*4);
 
 
+
+
     #if 0
     // this should be a compiler error because there are 5 parameters!
     ASSERT_EQ((TensorHelper<size_t,4,4>::index({0,0,0,0,0})),0);
@@ -126,30 +204,6 @@ TEST(TensorTest, Indexing2) {
         auto coords = TensorHelper<size_t,4,4>::dimension(4*4*4*3 + 4*2);
         ASSERT_EQ(coords, (tuple<size_t,size_t,size_t,size_t>(0,2,0,3)));
     }
-}
-
-TEST(TensorTest, Tuples) {
-    tuple<int, int, int> a(0,1,3);
-    auto head = tuple_head<2>(a);
-    static_assert(std::tuple_size<decltype(head)>::value == 2);
-    ASSERT_EQ(get<0>(head), 0);
-    ASSERT_EQ(get<1>(head), 1);
-
-    auto tail = tuple_tail<2>(a);
-    static_assert(std::tuple_size<decltype(tail)>::value == 1);
-    ASSERT_EQ(get<0>(tail), 3);
-
-    auto full = tuple_splice<2>(a, 2);
-    static_assert(std::tuple_size<decltype(full)>::value == 4);
-    ASSERT_EQ(get<0>(full), 0);
-    ASSERT_EQ(get<1>(full), 1);
-    ASSERT_EQ(get<2>(full), 2);
-    ASSERT_EQ(get<3>(full), 3);
-
-    auto full_tail = tuple_tail<1>(full);
-    static_assert(std::tuple_size<decltype(full_tail)>::value == 3);
-
-    auto full2 = tuple_splice<0>(a, tuple_splice<2>(a, 2));
 }
 
 TEST(GLBlockTest, Contract) {

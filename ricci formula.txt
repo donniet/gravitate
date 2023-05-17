@@ -1,0 +1,7 @@
+# this is what ChatGPT gave me:
+R_{ab} = (1/2)g^{cd}(∂_a∂_cg_{bd} + ∂_b∂_dg_{ac} - ∂_a∂_dg_{bc} - ∂_b∂_cg_{ad}) + (1/2)(g^{ce}Γ^d_{ec} - g^{de}Γ^c_{ec})(Γ^e_{ad} - Γ^e_{ab})
+
+
+# this is what I got from Cadabra:
+
+R_{a b} =  1/2 \partial_{c}(g^{c d}) \partial_{a}(g_{b d}) +  1/2 \partial_{c}(g^{c d}) \partial_{b}(g_{a d}) -  1/2 \partial_{c}(g^{c d}) \partial_{d}(g_{a b}) -  1/2 \partial_{b}(g^{c d}) \partial_{a}(g_{c d}) + g^{c d} ( 1/2 \partial_{a c}(g_{b d}) +  1/2 \partial_{b c}(g_{a d}) -  1/2 \partial_{c d}(g_{a b}) -  1/2 \partial_{a b}(g_{c d}) +  1/4 \partial_{a}(g_{b c}) g^{e f} \partial_{d}(g_{e f})) + g^{c d} g^{e f} ( 1/4 \partial_{b}(g_{a c}) \partial_{d}(g_{e f}) -  1/4 \partial_{c}(g_{a b}) \partial_{d}(g_{e f}) -  1/2 \partial_{c}(g_{a e}) \partial_{f}(g_{b d}) +  1/2 \partial_{c}(g_{a e}) \partial_{d}(g_{b f}) -  1/4 \partial_{a}(g_{c e}) \partial_{b}(g_{d f}))

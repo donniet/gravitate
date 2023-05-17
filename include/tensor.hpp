@@ -9,6 +9,7 @@
 #include <algorithm>
 #include <execution>
 #include <type_traits>
+#include <mutex>
 
 using std::tuple;
 using std::tuple_cat;
@@ -39,6 +40,8 @@ struct variances_to_tensor<T,N,variance_container<Variances...>> {
     typedef Tensor<T,N,Variances...> type;
 };
 
+
+
 template<typename T, size_t N, typename ... Variances>
 class Tensor {
 public:
@@ -64,10 +67,10 @@ public:
     this_type & operator=(this_type &&);
     ~Tensor();
 
-    template<typename ... Sizes>
-    static size_t index(Sizes ... sizes) { return helper_type::index(sizes...); }
+    template<typename Tuple>
+    static size_t index(Tuple sizes) { return helper_type::index(sizes); }
     static auto dimension(size_t index) { return helper_type::dimension(index); }
-    
+
     bool operator==(this_type const &) const;
     bool operator!=(this_type const & other) const { return !(*this == other); }
 
@@ -86,6 +89,9 @@ public:
     template<size_t i, size_t j, typename ... SecondVariances>
     typename variances_to_tensor<T,N,typename contraction_type<i,j,Variances...,SecondVariances...>::type>::type
     multiplyAndContract(Tensor<T,N,SecondVariances...> const & other) const;
+
+    // returns a tensor with the multiplicative inverse of all elements
+    Tensor<T,N,Variances...> invert() const;
 
     T & operator[](size_t index) { return data_[index]; }
     T const & operator[](size_t index) const { return data_[index]; }
@@ -124,6 +130,19 @@ public:
     typename data_type::const_iterator end() const { return data_.end(); }
 
     void print(std::ostream & os) const;
+};
+
+template<size_t N, size_t ... Is>
+struct tensor_stride;
+
+template<size_t N>
+struct tensor_stride<N> {
+    static constexpr size_t value = 0;
+};
+
+template<size_t N, size_t I, size_t ... Is>
+struct tensor_stride<N,I,Is...> {
+    static constexpr size_t value = power<N,I>::value + tensor_stride<N,Is...>::value;
 };
 
 template<typename T, size_t N, typename ... Variances>
@@ -242,7 +261,7 @@ Tensor<T,N,Variances...>::multiplyAndContract(Tensor<T,N,SecondVariances...> con
 
         for(size_t k = 0; k < N; ++k, dex += stride<i,j>()) {
             // turn the offset into tensor indices of the product
-            auto dims = product_type::dimension(dex);
+            auto dims = product_type::dimension(dex);   
 
             // split the dimensions into the first and second indices
             auto ac = tuple_head<sizeof...(Variances)>(dims);
@@ -352,3 +371,160 @@ auto Tensor<T,N,Variances...>::contract() const {
 
 template<typename T, size_t N, typename ... Variances>
 Tensor<T,N,Variances...>::~Tensor() {}
+
+template<typename T, size_t N, typename ... Variances>
+Tensor<T,N,Variances...> Tensor<T,N,Variances...>::invert() const {
+    Tensor<T,N,Variances...> ret(false); // don't initialize
+
+    std::transform(std::execution::par_unseq, begin(), end(), ret.begin(), [](T const & d) -> T {
+        return 1.0 / d;
+    });
+
+    return ret;
+};
+
+
+template<typename Number>
+bool invert(const Number * m, Number * invOut)
+{
+    Number inv[16], det;
+    int i;
+
+    inv[0] = m[5]  * m[10] * m[15] - 
+             m[5]  * m[11] * m[14] - 
+             m[9]  * m[6]  * m[15] + 
+             m[9]  * m[7]  * m[14] +
+             m[13] * m[6]  * m[11] - 
+             m[13] * m[7]  * m[10];
+
+    inv[4] = -m[4]  * m[10] * m[15] + 
+              m[4]  * m[11] * m[14] + 
+              m[8]  * m[6]  * m[15] - 
+              m[8]  * m[7]  * m[14] - 
+              m[12] * m[6]  * m[11] + 
+              m[12] * m[7]  * m[10];
+
+    inv[8] = m[4]  * m[9] * m[15] - 
+             m[4]  * m[11] * m[13] - 
+             m[8]  * m[5] * m[15] + 
+             m[8]  * m[7] * m[13] + 
+             m[12] * m[5] * m[11] - 
+             m[12] * m[7] * m[9];
+
+    inv[12] = -m[4]  * m[9] * m[14] + 
+               m[4]  * m[10] * m[13] +
+               m[8]  * m[5] * m[14] - 
+               m[8]  * m[6] * m[13] - 
+               m[12] * m[5] * m[10] + 
+               m[12] * m[6] * m[9];
+
+    inv[1] = -m[1]  * m[10] * m[15] + 
+              m[1]  * m[11] * m[14] + 
+              m[9]  * m[2] * m[15] - 
+              m[9]  * m[3] * m[14] - 
+              m[13] * m[2] * m[11] + 
+              m[13] * m[3] * m[10];
+
+    inv[5] = m[0]  * m[10] * m[15] - 
+             m[0]  * m[11] * m[14] - 
+             m[8]  * m[2] * m[15] + 
+             m[8]  * m[3] * m[14] + 
+             m[12] * m[2] * m[11] - 
+             m[12] * m[3] * m[10];
+
+    inv[9] = -m[0]  * m[9] * m[15] + 
+              m[0]  * m[11] * m[13] + 
+              m[8]  * m[1] * m[15] - 
+              m[8]  * m[3] * m[13] - 
+              m[12] * m[1] * m[11] + 
+              m[12] * m[3] * m[9];
+
+    inv[13] = m[0]  * m[9] * m[14] - 
+              m[0]  * m[10] * m[13] - 
+              m[8]  * m[1] * m[14] + 
+              m[8]  * m[2] * m[13] + 
+              m[12] * m[1] * m[10] - 
+              m[12] * m[2] * m[9];
+
+    inv[2] = m[1]  * m[6] * m[15] - 
+             m[1]  * m[7] * m[14] - 
+             m[5]  * m[2] * m[15] + 
+             m[5]  * m[3] * m[14] + 
+             m[13] * m[2] * m[7] - 
+             m[13] * m[3] * m[6];
+
+    inv[6] = -m[0]  * m[6] * m[15] + 
+              m[0]  * m[7] * m[14] + 
+              m[4]  * m[2] * m[15] - 
+              m[4]  * m[3] * m[14] - 
+              m[12] * m[2] * m[7] + 
+              m[12] * m[3] * m[6];
+
+    inv[10] = m[0]  * m[5] * m[15] - 
+              m[0]  * m[7] * m[13] - 
+              m[4]  * m[1] * m[15] + 
+              m[4]  * m[3] * m[13] + 
+              m[12] * m[1] * m[7] - 
+              m[12] * m[3] * m[5];
+
+    inv[14] = -m[0]  * m[5] * m[14] + 
+               m[0]  * m[6] * m[13] + 
+               m[4]  * m[1] * m[14] - 
+               m[4]  * m[2] * m[13] - 
+               m[12] * m[1] * m[6] + 
+               m[12] * m[2] * m[5];
+
+    inv[3] = -m[1] * m[6] * m[11] + 
+              m[1] * m[7] * m[10] + 
+              m[5] * m[2] * m[11] - 
+              m[5] * m[3] * m[10] - 
+              m[9] * m[2] * m[7] + 
+              m[9] * m[3] * m[6];
+
+    inv[7] = m[0] * m[6] * m[11] - 
+             m[0] * m[7] * m[10] - 
+             m[4] * m[2] * m[11] + 
+             m[4] * m[3] * m[10] + 
+             m[8] * m[2] * m[7] - 
+             m[8] * m[3] * m[6];
+
+    inv[11] = -m[0] * m[5] * m[11] + 
+               m[0] * m[7] * m[9] + 
+               m[4] * m[1] * m[11] - 
+               m[4] * m[3] * m[9] - 
+               m[8] * m[1] * m[7] + 
+               m[8] * m[3] * m[5];
+
+    inv[15] = m[0] * m[5] * m[10] - 
+              m[0] * m[6] * m[9] - 
+              m[4] * m[1] * m[10] + 
+              m[4] * m[2] * m[9] + 
+              m[8] * m[1] * m[6] - 
+              m[8] * m[2] * m[5];
+
+    det = m[0] * inv[0] + m[1] * inv[4] + m[2] * inv[8] + m[3] * inv[12];
+
+    if (det == 0)
+        return false;
+
+    det = 1.0 / det;
+
+    for (i = 0; i < 16; i++)
+        invOut[i] = inv[i] * det;
+
+    return true;
+}
+
+Tensor<float,4,Contravariant,Contravariant> invert(Tensor<float,4,Covariant,Covariant> const & in) {
+    Tensor<float,4,Contravariant,Contravariant> out;
+    invert(&in[0], &out[0]);
+    return out;
+}
+
+
+Tensor<float,4,Covariant,Covariant> invert(Tensor<float,4,Contravariant,Contravariant> const & in) {
+    Tensor<float,4,Covariant,Covariant> out;
+    invert(&in[0], &out[0]);
+    return out;
+}
+

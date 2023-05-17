@@ -52,3 +52,81 @@ auto tuple_splice(tuple<Ts...> const & t, T val) {
     );
 }
 
+template<typename Seq0, typename Seq1>
+struct sequence_join;
+
+template<size_t ... Is, size_t ... Js>
+struct sequence_join<std::index_sequence<Is...>, std::index_sequence<Js...>> {
+    typedef std::index_sequence<Is..., Js...> type;
+};
+
+template<size_t Remove, size_t ... Is>
+struct remove_sequence_element;
+
+template<size_t Remove>
+struct remove_sequence_element<Remove> {
+    typedef std::index_sequence<> type;
+};
+
+template<size_t Remove, size_t First, size_t ... Rest>
+struct remove_sequence_element<Remove, First, Rest...> {
+    typedef typename std::conditional_t<Remove == First,
+        typename remove_sequence_element<Remove, Rest...>::type,
+        typename sequence_join<
+            std::index_sequence<First>, 
+            typename remove_sequence_element<Remove, Rest...>::type
+        >::type
+    > type;
+};
+
+template<size_t Exists, size_t ... Is>
+struct element_exists {
+    static constexpr bool value = false;
+};
+
+template<size_t Exists, size_t First, size_t ... Rest>
+struct element_exists<Exists, First, Rest...> {
+    static constexpr bool value = Exists == First || element_exists<Exists, Rest...>::value;
+};
+
+template<typename Seq> struct is_permutation;
+
+template<> struct is_permutation<std::index_sequence<>> { 
+    static constexpr bool value = true;
+};
+
+template<size_t ... Is>
+struct is_permutation<std::index_sequence<Is...>> {
+    static constexpr bool value = 
+        element_exists<sizeof...(Is)-1, Is...>::value &&
+        is_permutation<typename remove_sequence_element<sizeof...(Is)-1, Is...>::type>::value;
+};
+
+template<typename Seq, typename Enable = void>
+struct permutation_helper;
+
+template<size_t ... Is>
+struct permutation_helper<std::index_sequence<Is...>, 
+    typename std::enable_if<
+        is_permutation<
+            std::index_sequence<Is...>
+        >::value
+    >::type> 
+{};
+
+template<size_t ... Is>
+struct permutation : public permutation_helper<std::index_sequence<Is...>> {
+    template<typename T> static constexpr auto permute(T const &);    
+};
+
+// template<size_t ... Is>
+// template<typename ... Ts>
+// auto permutation<Is...>::permute(tuple<Ts...> const & tup) {
+
+// }
+
+
+
+
+
+

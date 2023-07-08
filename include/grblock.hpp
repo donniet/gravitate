@@ -19,7 +19,7 @@ typedef Tensor<float,4,Contravariant,Covariant,Covariant,Covariant> riemann_type
 
 
 
-
+ 
 struct GRElement {
     // vector_type corner_min, corner_max;
     metric_type metric;
